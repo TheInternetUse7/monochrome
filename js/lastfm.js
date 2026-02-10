@@ -1,5 +1,6 @@
 //js/lastfm.js
 import { lastFMStorage } from './storage.js';
+import { settingsSyncManager } from './accounts/settings-sync.js';
 
 export class LastFMScrobbler {
     constructor() {
@@ -17,6 +18,12 @@ export class LastFMScrobbler {
 
         this.loadCredentials();
         this.loadSession();
+
+        // Listen for session restoration from cloud sync
+        window.addEventListener('scrobbling-sessions-restored', () => {
+            this.loadSession();
+            console.log('[Last.fm] Session reloaded from cloud sync');
+        });
     }
 
     loadCredentials() {
@@ -56,6 +63,9 @@ export class LastFMScrobbler {
                 name: username,
             })
         );
+
+        // Sync settings to cloud
+        settingsSyncManager.debouncedSyncToCloud();
     }
 
     clearSession() {

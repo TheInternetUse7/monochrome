@@ -35,7 +35,14 @@ import { getButterchurnPresets } from './visualizers/butterchurn.js';
 import { db } from './db.js';
 import { authManager } from './accounts/auth.js';
 import { syncManager } from './accounts/pocketbase.js';
+import { settingsSyncManager } from './accounts/settings-sync.js';
+import { hasPassphrase, showSetPassphraseModal, clearPassphrase } from './utils/encryption.js';
 import { saveFirebaseConfig, clearFirebaseConfig } from './accounts/config.js';
+
+// Helper to dispatch settings changed event for sync
+function settingsChanged() {
+    window.dispatchEvent(new CustomEvent('settings-changed'));
+}
 
 export function initializeSettings(scrobbler, player, api, ui) {
     // Restore last active settings tab
@@ -285,12 +292,14 @@ export function initializeSettings(scrobbler, player, api, ui) {
     if (lastfmToggle) {
         lastfmToggle.addEventListener('change', (e) => {
             lastFMStorage.setEnabled(e.target.checked);
+            settingsChanged();
         });
     }
 
     if (lastfmLoveToggle) {
         lastfmLoveToggle.addEventListener('change', (e) => {
             lastFMStorage.setLoveOnLike(e.target.checked);
+            settingsChanged();
         });
     }
 
@@ -299,6 +308,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         lastfmCustomCredsToggle.addEventListener('change', (e) => {
             lastFMStorage.setUseCustomCredentials(e.target.checked);
             updateCustomCredsUI();
+            settingsChanged();
 
             // Reload credentials in the scrobbler
             scrobbler.lastfm.reloadCredentials();
@@ -325,6 +335,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
             lastFMStorage.setCustomApiKey(apiKey);
             lastFMStorage.setCustomApiSecret(apiSecret);
+            settingsChanged();
 
             // Reload credentials
             scrobbler.lastfm.reloadCredentials();
@@ -348,6 +359,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
                 lastfmCustomApiKey.value = '';
                 lastfmCustomApiSecret.value = '';
                 lastfmCustomCredsToggle.checked = false;
+                settingsChanged();
 
                 // Reload credentials
                 scrobbler.lastfm.reloadCredentials();
@@ -422,6 +434,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
             const newPercentage = parseInt(e.target.value, 10);
             scrobblePercentageInput.value = newPercentage;
             lastFMStorage.setScrobblePercentage(newPercentage);
+            settingsChanged();
         });
 
         scrobblePercentageInput.addEventListener('change', (e) => {
@@ -430,6 +443,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
             scrobblePercentageSlider.value = newPercentage;
             scrobblePercentageInput.value = newPercentage;
             lastFMStorage.setScrobblePercentage(newPercentage);
+            settingsChanged();
         });
 
         scrobblePercentageInput.addEventListener('input', (e) => {
@@ -437,6 +451,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
             if (!isNaN(newPercentage) && newPercentage >= 1 && newPercentage <= 100) {
                 scrobblePercentageSlider.value = newPercentage;
                 lastFMStorage.setScrobblePercentage(newPercentage);
+                settingsChanged();
             }
         });
     }
@@ -465,6 +480,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         lbToggle.addEventListener('change', (e) => {
             const enabled = e.target.checked;
             listenBrainzSettings.setEnabled(enabled);
+            settingsChanged();
             updateListenBrainzUI();
         });
     }
@@ -472,12 +488,14 @@ export function initializeSettings(scrobbler, player, api, ui) {
     if (lbTokenInput) {
         lbTokenInput.addEventListener('change', (e) => {
             listenBrainzSettings.setToken(e.target.value.trim());
+            settingsChanged();
         });
     }
 
     if (lbCustomUrlInput) {
         lbCustomUrlInput.addEventListener('change', (e) => {
             listenBrainzSettings.setCustomUrl(e.target.value.trim());
+            settingsChanged();
         });
     }
 
@@ -505,6 +523,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         malojaToggle.addEventListener('change', (e) => {
             const enabled = e.target.checked;
             malojaSettings.setEnabled(enabled);
+            settingsChanged();
             updateMalojaUI();
         });
     }
@@ -512,12 +531,14 @@ export function initializeSettings(scrobbler, player, api, ui) {
     if (malojaTokenInput) {
         malojaTokenInput.addEventListener('change', (e) => {
             malojaSettings.setToken(e.target.value.trim());
+            settingsChanged();
         });
     }
 
     if (malojaCustomUrlInput) {
         malojaCustomUrlInput.addEventListener('change', (e) => {
             malojaSettings.setCustomUrl(e.target.value.trim());
+            settingsChanged();
         });
     }
 
@@ -623,12 +644,14 @@ export function initializeSettings(scrobbler, player, api, ui) {
         if (librefmToggle) {
             librefmToggle.addEventListener('change', (e) => {
                 libreFmSettings.setEnabled(e.target.checked);
+                settingsChanged();
             });
         }
 
         if (librefmLoveToggle) {
             librefmLoveToggle.addEventListener('change', (e) => {
                 libreFmSettings.setLoveOnLike(e.target.checked);
+                settingsChanged();
             });
         }
     }
@@ -656,6 +679,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
                 document.getElementById('custom-theme-editor').classList.remove('show');
                 themeManager.setTheme(theme);
             }
+            settingsChanged();
         });
     });
 
@@ -1825,7 +1849,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
                         for (const storeName of stores) {
                             try {
                                 await db.performTransaction(storeName, 'readwrite', (store) => store.clear());
-                            } catch (e) {
+                            } catch {
                                 // Store might not exist, continue
                             }
                         }
@@ -1853,11 +1877,189 @@ export function initializeSettings(scrobbler, player, api, ui) {
         });
     }
 
+    // Settings Passphrase Management
+    const passphraseSetupBtn = document.getElementById('passphrase-setup-btn');
+    const passphraseChangeBtn = document.getElementById('passphrase-change-btn');
+    const passphraseRemoveBtn = document.getElementById('passphrase-remove-btn');
+    const passphraseStatus = document.getElementById('passphrase-status');
+
+    const updatePassphraseUI = async () => {
+        const hasSet = await hasPassphrase();
+        if (passphraseStatus) {
+            passphraseStatus.textContent = hasSet ? 'Passphrase is set' : 'No passphrase set';
+        }
+        if (passphraseSetupBtn) {
+            passphraseSetupBtn.style.display = hasSet ? 'none' : 'inline-block';
+        }
+        if (passphraseChangeBtn) {
+            passphraseChangeBtn.style.display = hasSet ? 'inline-block' : 'none';
+        }
+        if (passphraseRemoveBtn) {
+            passphraseRemoveBtn.style.display = hasSet ? 'inline-block' : 'none';
+        }
+    };
+
+    updatePassphraseUI();
+
+    if (passphraseSetupBtn) {
+        passphraseSetupBtn.addEventListener('click', async () => {
+            const passphrase = await showSetPassphraseModal();
+            if (passphrase) {
+                settingsSyncManager.setPassphrase(passphrase);
+                await updatePassphraseUI();
+                // Sync settings with new passphrase
+                await settingsSyncManager.syncToCloud();
+            }
+        });
+    }
+
+    if (passphraseChangeBtn) {
+        passphraseChangeBtn.addEventListener('click', async () => {
+            const success = await settingsSyncManager.changePassphrase();
+            if (success) {
+                await updatePassphraseUI();
+            }
+        });
+    }
+
+    if (passphraseRemoveBtn) {
+        passphraseRemoveBtn.addEventListener('click', async () => {
+            if (confirm('Remove your sync passphrase? This will disable encryption for your synced settings.')) {
+                clearPassphrase();
+                settingsSyncManager.clearPassphrase();
+                await updatePassphraseUI();
+            }
+        });
+    }
+
     // Font Settings
     initializeFontSettings();
 
     // Settings Search functionality
     setupSettingsSearch();
+
+    // Listen for scrobbling session restoration from cloud sync
+    window.addEventListener('scrobbling-sessions-restored', () => {
+        console.log('[Settings] Scrobbling sessions restored, updating UI...');
+        // Reload scrobbler UIs
+        updateLastFMUI();
+        updateLibreFmUI();
+        updateListenBrainzUI();
+        updateMalojaUI();
+    });
+
+    // Listen for external request to update scrobbler UIs
+    window.addEventListener('update-scrobbler-uis', () => {
+        console.log('[Settings] External request to update scrobbler UIs...');
+        updateLastFMUI();
+        updateLibreFmUI();
+        updateListenBrainzUI();
+        updateMalojaUI();
+    });
+
+    // Listen for settings synced from cloud to update UI (no reload to avoid loops)
+    window.addEventListener('settings-synced-from-cloud', () => {
+        console.log('[Settings] Settings synced from cloud, updating UI...');
+        // Update all UI elements without page reload
+        updateThemeUI();
+        updateScrobblerUIs();
+        updateAudioUI();
+        updateInterfaceUI();
+    });
+}
+
+function updateThemeUI() {
+    // Update theme picker
+    const themePicker = document.getElementById('theme-picker');
+    if (themePicker) {
+        const currentTheme = themeManager.getTheme();
+        themePicker.querySelectorAll('.theme-option').forEach((opt) => {
+            opt.classList.toggle('active', opt.dataset.theme === currentTheme);
+        });
+    }
+    // Update custom theme editor visibility
+    const customThemeEditor = document.getElementById('custom-theme-editor');
+    if (customThemeEditor) {
+        customThemeEditor.classList.toggle('show', themeManager.getTheme() === 'custom');
+    }
+}
+
+function updateScrobblerUIs() {
+    // Update all scrobbler UIs by dispatching an event that the settings page will handle
+    window.dispatchEvent(new CustomEvent('update-scrobbler-uis'));
+}
+
+function updateAudioUI() {
+    // Update audio-related UI elements
+    const eqToggle = document.getElementById('eq-toggle');
+    if (eqToggle) {
+        eqToggle.checked = equalizerSettings.isEnabled();
+    }
+
+    const replayGainModeSelect = document.getElementById('replay-gain-mode');
+    if (replayGainModeSelect) {
+        replayGainModeSelect.value = replayGainSettings.getMode();
+    }
+
+    const replayGainPreamp = document.getElementById('replay-gain-preamp');
+    if (replayGainPreamp) {
+        replayGainPreamp.value = replayGainSettings.getPreamp();
+    }
+
+    const monoAudioToggle = document.getElementById('mono-audio-toggle');
+    if (monoAudioToggle) {
+        monoAudioToggle.checked = monoAudioSettings.isEnabled();
+    }
+
+    const exponentialVolumeToggle = document.getElementById('exponential-volume-toggle');
+    if (exponentialVolumeToggle) {
+        exponentialVolumeToggle.checked = exponentialVolumeSettings.isEnabled();
+    }
+}
+
+function updateInterfaceUI() {
+    // Update interface-related UI elements
+    const waveformToggle = document.getElementById('waveform-toggle');
+    if (waveformToggle) {
+        waveformToggle.checked = waveformSettings.isEnabled();
+    }
+
+    const smoothScrollingToggle = document.getElementById('smooth-scrolling-toggle');
+    if (smoothScrollingToggle) {
+        smoothScrollingToggle.checked = smoothScrollingSettings.isEnabled();
+    }
+
+    const qualityBadgesToggle = document.getElementById('quality-badges-toggle');
+    if (qualityBadgesToggle) {
+        qualityBadgesToggle.checked = qualityBadgeSettings.isEnabled();
+    }
+
+    const trackDateToggle = document.getElementById('track-date-toggle');
+    if (trackDateToggle) {
+        trackDateToggle.checked = trackDateSettings.useAlbumYear();
+    }
+
+    // Update card settings
+    const compactArtistToggle = document.getElementById('compact-artist-toggle');
+    if (compactArtistToggle) {
+        compactArtistToggle.checked = cardSettings.isCompactArtist();
+    }
+
+    const compactAlbumToggle = document.getElementById('compact-album-toggle');
+    if (compactAlbumToggle) {
+        compactAlbumToggle.checked = cardSettings.isCompactAlbum();
+    }
+
+    // Update visualizer settings
+    const visualizerToggle = document.getElementById('visualizer-toggle');
+    if (visualizerToggle) {
+        visualizerToggle.checked = visualizerSettings.isEnabled();
+    }
+
+    const visualizerPresetSelect = document.getElementById('visualizer-preset-select');
+    if (visualizerPresetSelect) {
+        visualizerPresetSelect.value = visualizerSettings.getPreset();
+    }
 }
 
 function initializeFontSettings() {
