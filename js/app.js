@@ -439,8 +439,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize tracker
     initTracker(player);
 
-
-
     const castBtn = document.getElementById('cast-btn');
     initializeCasting(audioPlayer, castBtn);
 
