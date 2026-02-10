@@ -419,7 +419,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
     initializeUIInteractions(player, api, ui);
     initializeKeyboardShortcuts(player, audioPlayer);
-
     // Restore UI state for the current track (like button, theme)
     if (player.currentTrack) {
         ui.setCurrentTrack(player.currentTrack);
