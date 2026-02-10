@@ -1,4 +1,5 @@
 import { libreFmSettings, lastFMStorage } from './storage.js';
+import { settingsSyncManager } from './accounts/settings-sync.js';
 
 export class LibreFmScrobbler {
     constructor() {
@@ -15,6 +16,12 @@ export class LibreFmScrobbler {
         this.isScrobbling = false;
 
         this.loadSession();
+
+        // Listen for session restoration from cloud sync
+        window.addEventListener('scrobbling-sessions-restored', () => {
+            this.loadSession();
+            console.log('[Libre.fm] Session reloaded from cloud sync');
+        });
     }
 
     loadSession() {
@@ -40,6 +47,9 @@ export class LibreFmScrobbler {
                 name: username,
             })
         );
+
+        // Sync settings to cloud
+        settingsSyncManager.debouncedSyncToCloud();
     }
 
     clearSession() {
