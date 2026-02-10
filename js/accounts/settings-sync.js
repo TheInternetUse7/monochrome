@@ -11,7 +11,6 @@ import {
     persistPassphrase,
     getPersistedPassphrase,
     clearPassphrase as clearEncryptionPassphrase,
-    verifyPassphrase,
 } from '../utils/encryption.js';
 import {
     lastFMStorage,
