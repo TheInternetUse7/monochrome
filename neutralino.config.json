@@ -7,7 +7,7 @@
     "version": "1.0.0",
     "defaultMode": "window",
     "documentRoot": "dist/",
-    "url": "https://monochrome.tf/",
+    "url": "https://monochrome.tf",
     "enableServer": true,
     "enableNativeAPI": true,
     "enableExtensions": true,
@@ -45,5 +45,10 @@
             "commandWindows": "powershell.exe -ExecutionPolicy Bypass -File \"${NL_PATH}/extensions/js.neutralino.discordrpc/bridge.ps1\""
         }
     ],
-    "nativeAllowList": ["app.exit", "window.*", "extensions.*", "events.*"]
+    "nativeAllowList": [
+        "app.exit",
+        "window.*",
+        "extensions.*",
+        "events.*"
+    ]
 }
