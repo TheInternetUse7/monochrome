@@ -2,6 +2,8 @@
 import PocketBase from 'pocketbase';
 import { db } from '../db.js';
 import { authManager } from './auth.js';
+import { settingsSyncManager } from './settings-sync.js';
+import { resetAllLocalSettings } from '../storage.js';
 
 const PUBLIC_COLLECTION = 'public_playlists';
 const DEFAULT_POCKETBASE_URL = 'https://monodb.samidy.com';
@@ -38,6 +40,7 @@ const syncManager = {
                             history: [],
                             user_playlists: {},
                             user_folders: {},
+                            settings: null,
                         },
                         { f_id: uid }
                     );
@@ -168,14 +171,14 @@ const syncManager = {
                 artists: item.artists?.map((a) => ({ id: a.id, name: a.name || null })) || [],
                 album: item.album
                     ? {
-                          id: item.album.id,
-                          title: item.album.title || null,
-                          cover: item.album.cover || null,
-                          releaseDate: item.album.releaseDate || null,
-                          vibrantColor: item.album.vibrantColor || null,
-                          artist: item.album.artist || null,
-                          numberOfTracks: item.album.numberOfTracks || null,
-                      }
+                        id: item.album.id,
+                        title: item.album.title || null,
+                        cover: item.album.cover || null,
+                        releaseDate: item.album.releaseDate || null,
+                        vibrantColor: item.album.vibrantColor || null,
+                        artist: item.album.artist || null,
+                        numberOfTracks: item.album.numberOfTracks || null,
+                    }
                     : null,
                 copyright: item.copyright || null,
                 isrc: item.isrc || null,
@@ -196,8 +199,8 @@ const syncManager = {
                 artist: item.artist
                     ? { name: item.artist.name || null, id: item.artist.id }
                     : item.artists?.[0]
-                      ? { name: item.artists[0].name || null, id: item.artists[0].id }
-                      : null,
+                        ? { name: item.artists[0].name || null, id: item.artists[0].id }
+                        : null,
                 type: item.type || null,
                 numberOfTracks: item.numberOfTracks || null,
             };
@@ -574,6 +577,10 @@ const syncManager = {
                     window.dispatchEvent(new CustomEvent('history-changed'));
                     window.dispatchEvent(new HashChangeEvent('hashchange'));
 
+                    // Sync settings from cloud
+                    await settingsSyncManager.syncFromCloud();
+                    settingsSyncManager.startWatching();
+
                     console.log('[PocketBase] ✓ Sync completed');
                 }
             } catch (error) {
@@ -584,6 +591,9 @@ const syncManager = {
         } else {
             this._userRecordCache = null;
             this._isSyncing = false;
+            settingsSyncManager.stopWatching();
+            settingsSyncManager.clearPassphrase();
+            resetAllLocalSettings();
         }
     },
 };

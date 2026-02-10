@@ -74,15 +74,28 @@ Create two collections: `DB_users` and `public_playlists` (do NOT use the defaul
 
 #### DB_users Fields
 
-| Field Name          | Type       | Description               |
-| ------------------- | ---------- | ------------------------- |
-| `firebase_id`       | Plain Text | Links to Firebase user ID |
-| `lastUpdated`       | Number     | Timestamp of last update  |
-| `history`           | JSON       | User listening history    |
-| `library`           | JSON       | User's saved library      |
-| `user_playlists`    | JSON       | User's custom playlists   |
-| `user_folders`      | JSON       | User's playlist folders   |
-| `deleted_playlists` | JSON       | Soft-deleted playlists    |
+| Field Name          | Type       | Description                                            |
+| ------------------- | ---------- | ------------------------------------------------------ |
+| `firebase_id`       | Plain Text | Links to Firebase user ID                              |
+| `lastUpdated`       | Number     | Timestamp of last update                               |
+| `history`           | JSON       | User listening history                                 |
+| `library`           | JSON       | User's saved library                                   |
+| `user_playlists`    | JSON       | User's custom playlists                                |
+| `user_folders`      | JSON       | User's playlist folders                                |
+| `deleted_playlists` | JSON       | Soft-deleted playlists                                 |
+| `settings`          | Plain Text | Encrypted user settings (appearance, scrobbling, etc.) |
+
+#### Database Changes Required:
+
+```json
+// Add to existing DB_users collection or new database
+{
+    "name": "settings",
+    "type": "text"
+}
+```
+
+No database migration needed - Passphrase system works with existing records.
 
 #### public_playlists Fields
 
@@ -118,6 +131,56 @@ Set the API rules for both collections to allow read/write access:
 - Create Rule: `firebase_id = @request.query.f_id`
 - Update Rule: `uid = @request.query.f_id`
 - Delete Rule: `uid = @request.query.f_id`
+
+**Note for Passphrase System:**
+
+- The settings field stores encrypted data that requires both database access AND the correct passphrase
+- No changes to existing Firebase UID needed - the passphrase is the additional security layer
+
+---
+
+### 2.4 Settings Sync (Optional)
+
+The `settings` field in `DB_users` stores encrypted user preferences including:
+
+**Scrobbling Services:**
+
+- Last.fm (credentials, toggle states, scrobble percentage)
+- ListenBrainz (token, custom URL)
+- Maloja (token, custom URL)
+- Libre.fm (toggle states)
+
+**Appearance & UI:**
+
+- Theme and custom theme colors
+- Font configuration
+- Now playing mode
+- Background and dynamic color settings
+
+**Audio Settings:**
+
+- Equalizer settings and presets
+- Replay gain mode and preamp
+- Audio effects (speed, pitch)
+- Mono audio and exponential volume
+
+**Interface Preferences:**
+
+- Card compact modes
+- Visualizer settings
+- Quality badges
+- Track date display mode
+- Sidebar visibility and order
+- Home page section preferences
+
+These settings are encrypted with AES-256-GCM using a combination of the user's Firebase UID and a user-defined passphrase (4+ characters). The passphrase is required to decrypt and access the settings on any device.
+
+**Security Features:**
+
+- PBKDF2 key derivation with 100,000 iterations
+- Random IV for each encryption operation
+- Passphrase never stored in plain text (only a hash for verification)
+- Encryption happens entirely in the browser (Web Crypto API)
 
 ---
 

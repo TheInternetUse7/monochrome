@@ -2449,6 +2449,121 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
     // Blocked Content Management
     initializeBlockedContentManager();
+
+    // Listen for scrobbling session restoration from cloud sync
+    window.addEventListener('scrobbling-sessions-restored', () => {
+        console.log('[Settings] Scrobbling sessions restored, updating UI...');
+        updateLastFMUI();
+        updateLibreFmUI();
+        updateListenBrainzUI();
+        updateMalojaUI();
+    });
+
+    // Listen for external request to update scrobbler UIs
+    window.addEventListener('update-scrobbler-uis', () => {
+        console.log('[Settings] External request to update scrobbler UIs...');
+        updateLastFMUI();
+        updateLibreFmUI();
+        updateListenBrainzUI();
+        updateMalojaUI();
+    });
+
+    // Listen for settings synced from cloud to update UI (no reload to avoid loops)
+    window.addEventListener('settings-synced-from-cloud', () => {
+        console.log('[Settings] Settings synced from cloud, updating UI...');
+        updateThemeUI();
+        updateScrobblerUIs();
+        updateAudioUI();
+        updateInterfaceUI();
+    });
+}
+
+function updateThemeUI() {
+    const themePicker = document.getElementById('theme-picker');
+    if (themePicker) {
+        const currentTheme = themeManager.getTheme();
+        themePicker.querySelectorAll('.theme-option').forEach((opt) => {
+            opt.classList.toggle('active', opt.dataset.theme === currentTheme);
+        });
+    }
+
+    const customThemeEditor = document.getElementById('custom-theme-editor');
+    if (customThemeEditor) {
+        customThemeEditor.classList.toggle('show', themeManager.getTheme() === 'custom');
+    }
+}
+
+function updateScrobblerUIs() {
+    window.dispatchEvent(new CustomEvent('update-scrobbler-uis'));
+}
+
+function updateAudioUI() {
+    const eqToggle = document.getElementById('eq-toggle');
+    if (eqToggle) {
+        eqToggle.checked = equalizerSettings.isEnabled();
+    }
+
+    const replayGainModeSelect = document.getElementById('replay-gain-mode');
+    if (replayGainModeSelect) {
+        replayGainModeSelect.value = replayGainSettings.getMode();
+    }
+
+    const replayGainPreamp = document.getElementById('replay-gain-preamp');
+    if (replayGainPreamp) {
+        replayGainPreamp.value = replayGainSettings.getPreamp();
+    }
+
+    const monoAudioToggle = document.getElementById('mono-audio-toggle');
+    if (monoAudioToggle) {
+        monoAudioToggle.checked = monoAudioSettings.isEnabled();
+    }
+
+    const exponentialVolumeToggle = document.getElementById('exponential-volume-toggle');
+    if (exponentialVolumeToggle) {
+        exponentialVolumeToggle.checked = exponentialVolumeSettings.isEnabled();
+    }
+}
+
+function updateInterfaceUI() {
+    const waveformToggle = document.getElementById('waveform-toggle');
+    if (waveformToggle) {
+        waveformToggle.checked = waveformSettings.isEnabled();
+    }
+
+    const smoothScrollingToggle = document.getElementById('smooth-scrolling-toggle');
+    if (smoothScrollingToggle) {
+        smoothScrollingToggle.checked = smoothScrollingSettings.isEnabled();
+    }
+
+    const qualityBadgesToggle = document.getElementById('quality-badges-toggle');
+    if (qualityBadgesToggle) {
+        qualityBadgesToggle.checked = qualityBadgeSettings.isEnabled();
+    }
+
+    const trackDateToggle = document.getElementById('track-date-toggle');
+    if (trackDateToggle) {
+        trackDateToggle.checked = trackDateSettings.useAlbumYear();
+    }
+
+    const compactArtistToggle = document.getElementById('compact-artist-toggle');
+    if (compactArtistToggle) {
+        compactArtistToggle.checked = cardSettings.isCompactArtist();
+    }
+
+    const compactAlbumToggle = document.getElementById('compact-album-toggle');
+    if (compactAlbumToggle) {
+        compactAlbumToggle.checked = cardSettings.isCompactAlbum();
+    }
+
+    const visualizerToggle = document.getElementById('visualizer-toggle');
+    if (visualizerToggle) {
+        visualizerToggle.checked = visualizerSettings.isEnabled();
+    }
+
+    const visualizerPresetSelect = document.getElementById('visualizer-preset-select');
+    if (visualizerPresetSelect) {
+        visualizerPresetSelect.value = visualizerSettings.getPreset();
+    }
 }
 
 function initializeFontSettings() {

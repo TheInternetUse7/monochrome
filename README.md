@@ -105,8 +105,6 @@ For alternative instances, check [INSTANCES.md](INSTANCES.md).
 
 ## Self-Hosting
 
-NOTE: Accounts wont work on self-hosted instances.
-
 ### Option 1: Docker (Recommended)
 
 ```bash
@@ -118,6 +116,16 @@ docker compose up -d
 Visit `http://localhost:3000`
 
 For PocketBase, development mode, and advanced setups, see [DOCKER.md](DOCKER.md).
+
+#### Self-Hosted Database (Optional)
+
+You can run your own PocketBase database to enable cross-device syncing on your self-hosted instance:
+
+- Sync your library, history, playlists, and **settings** across devices
+- Supports all scrobbling services (Last.fm, ListenBrainz, Maloja, Libre.fm)
+- Encrypted storage for sensitive data
+
+See [self-hosted-database.md](self-hosted-database.md) for setup instructions.
 
 ### Option 2: Manual Installation
 
@@ -189,11 +197,23 @@ npm run build
 
 ### Account Features
 
-To sync your library, history, and playlists across devices:
+To sync your library, history, playlists, and **settings** across devices:
 
 1. Click the "Accounts" Section
 2. Sign in with Google or Email
 3. Your data will automatically sync across all devices
+
+**Synced Data Includes:**
+
+- Library (favorites, playlists, history)
+- Scrobbling service connections (Last.fm, ListenBrainz, etc.)
+- Appearance settings (theme, fonts, colors)
+- Audio settings (equalizer, replay gain, effects)
+- Interface preferences (sidebar, visualizer, etc.)
+
+**Security:**
+
+Your synced settings are encrypted with AES-256-GCM using a passphrase that you set. This ensures your scrobbling credentials and preferences remain secure even if your database is compromised.
 
 ---
 
