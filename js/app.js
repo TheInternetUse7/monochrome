@@ -239,32 +239,19 @@ async function disablePwaForAuthGate() {
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize desktop environment (Neutralino)
     const isDesktop = typeof window !== 'undefined' && (window.NL_MODE || window.location.port === '5050');
-    if (typeof window !== 'undefined' && window.Neutralino) {
-        console.log('[App] Neutralino object detected. Environment:', isDesktop ? 'Desktop' : 'Web');
-        if (isDesktop) {
-            console.log('[App] Initializing Neutralino desktop environment...');
-            try {
-                Neutralino.init();
-                console.log('[App] Neutralino.init() called successfully.');
+    if (isDesktop && typeof window !== 'undefined' && window.Neutralino) {
+        console.log('[App] Neutralino object detected. Environment: Desktop');
+        console.log('[App] Initializing Neutralino desktop environment...');
+        try {
+            Neutralino.init();
+            console.log('[App] Neutralino.init() called successfully.');
 
-                Neutralino.events.on('windowClose', () => {
-                    Neutralino.app.exit();
-                });
-
-                // Initialize Discord RPC after successful Neutralino init
-                console.log('[App] Starting Discord RPC...');
-                if (typeof initializeDiscordRPC === 'function') {
-                    initializeDiscordRPC(player);
-                } else {
-                    console.warn('[App] initializeDiscordRPC is not defined');
-                }
-
-                return true;
-            } catch (e) {
-                console.error('[App] Neutralino init failed:', e);
-            }
+            Neutralino.events.on('windowClose', () => {
+                Neutralino.app.exit();
+            });
+        } catch (e) {
+            console.error('[App] Neutralino init failed:', e);
         }
-        return false;
     }
 
     const api = new LosslessAPI(apiSettings);

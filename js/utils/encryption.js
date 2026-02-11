@@ -92,11 +92,19 @@ export async function hasPassphrase() {
 export async function setPassphrase(passphrase) {
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const encoder = new TextEncoder();
-    const data = encoder.encode(passphrase + ':' + Array.from(salt).map((b) => b.toString(16).padStart(2, '0')).join(''));
+    const data = encoder.encode(
+        passphrase +
+            ':' +
+            Array.from(salt)
+                .map((b) => b.toString(16).padStart(2, '0'))
+                .join('')
+    );
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-    const saltHex = Array.from(salt).map((b) => b.toString(16).padStart(2, '0')).join('');
+    const saltHex = Array.from(salt)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
 
     localStorage.setItem(PASSPHRASE_STORAGE_KEY, JSON.stringify({ salt: saltHex, hash: hashHex }));
 }
@@ -159,13 +167,9 @@ export async function getPersistedPassphrase() {
         if (!sessionKeyHex || !encryptedB64) return null;
 
         const sessionKey = new Uint8Array(sessionKeyHex.match(/.{2}/g).map((b) => parseInt(b, 16)));
-        const importedKey = await crypto.subtle.importKey(
-            'raw',
-            sessionKey,
-            { name: 'AES-GCM', length: 256 },
-            false,
-            ['decrypt']
-        );
+        const importedKey = await crypto.subtle.importKey('raw', sessionKey, { name: 'AES-GCM', length: 256 }, false, [
+            'decrypt',
+        ]);
 
         const combined = new Uint8Array(
             atob(encryptedB64)

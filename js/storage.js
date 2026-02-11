@@ -1786,8 +1786,8 @@ export const resetAllLocalSettings = () => {
         'librefm-enabled',
         'librefm-love-on-like',
         'listenbrainz-enabled',
-        'maloja-enabled'
+        'maloja-enabled',
     ];
 
-    keysToClear.forEach(key => localStorage.removeItem(key));
+    keysToClear.forEach((key) => localStorage.removeItem(key));
 };
