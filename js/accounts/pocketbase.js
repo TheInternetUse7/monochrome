@@ -171,14 +171,14 @@ const syncManager = {
                 artists: item.artists?.map((a) => ({ id: a.id, name: a.name || null })) || [],
                 album: item.album
                     ? {
-                        id: item.album.id,
-                        title: item.album.title || null,
-                        cover: item.album.cover || null,
-                        releaseDate: item.album.releaseDate || null,
-                        vibrantColor: item.album.vibrantColor || null,
-                        artist: item.album.artist || null,
-                        numberOfTracks: item.album.numberOfTracks || null,
-                    }
+                          id: item.album.id,
+                          title: item.album.title || null,
+                          cover: item.album.cover || null,
+                          releaseDate: item.album.releaseDate || null,
+                          vibrantColor: item.album.vibrantColor || null,
+                          artist: item.album.artist || null,
+                          numberOfTracks: item.album.numberOfTracks || null,
+                      }
                     : null,
                 copyright: item.copyright || null,
                 isrc: item.isrc || null,
@@ -199,8 +199,8 @@ const syncManager = {
                 artist: item.artist
                     ? { name: item.artist.name || null, id: item.artist.id }
                     : item.artists?.[0]
-                        ? { name: item.artists[0].name || null, id: item.artists[0].id }
-                        : null,
+                      ? { name: item.artists[0].name || null, id: item.artists[0].id }
+                      : null,
                 type: item.type || null,
                 numberOfTracks: item.numberOfTracks || null,
             };

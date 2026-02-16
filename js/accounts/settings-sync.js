@@ -11,7 +11,6 @@ import {
     persistPassphrase,
     getPersistedPassphrase,
     clearPassphrase as clearEncryptionPassphrase,
-    verifyPassphrase,
 } from '../utils/encryption.js';
 import {
     lastFMStorage,
@@ -42,6 +41,7 @@ import {
     sidebarSectionSettings,
     fontSettings,
     pwaUpdateSettings,
+    sidebarSettings,
 } from '../storage.js';
 
 let syncDebounceTimer = null;
@@ -173,14 +173,6 @@ const settingsSyncManager = {
                 },
             },
 
-            // Download & Playlist
-            downloads: {
-                quality: downloadQualitySettings.getQuality(),
-                coverArtSize: coverArtSizeSettings.getSize(),
-                bulkForceIndividual: bulkDownloadSettings.shouldForceIndividual(),
-                lyricsDownload: lyricsSettings.shouldDownloadLyrics(),
-            },
-
             playlist: {
                 generateM3U: playlistSettings.shouldGenerateM3U(),
                 generateM3U8: playlistSettings.shouldGenerateM3U8(),
@@ -211,7 +203,20 @@ const settingsSyncManager = {
                 showAbout: sidebarSectionSettings.shouldShowAbout(),
                 showDownload: sidebarSectionSettings.shouldShowDownload(),
                 showDiscord: sidebarSectionSettings.shouldShowDiscord(),
+                collapsed: sidebarSettings.isCollapsed(),
                 order: sidebarSectionSettings.getOrder(),
+            },
+
+            // Downloads & Playlist
+            downloads: {
+                quality: downloadQualitySettings.getQuality(),
+                streamingQuality: localStorage.getItem('playback-quality') || 'HI_RES_LOSSLESS',
+                coverArtSize: coverArtSizeSettings.getSize(),
+                bulkForceIndividual: bulkDownloadSettings.shouldForceIndividual(),
+                lyricsDownload: lyricsSettings.shouldDownloadLyrics(),
+                romajiLyrics: localStorage.getItem('lyricsRomajiMode') === 'true',
+                filenameTemplate: localStorage.getItem('filename-template') || '{trackNumber} - {artist} - {title}',
+                zipFolderTemplate: localStorage.getItem('zip-folder-template') || '{albumTitle} - {albumArtist}',
             },
 
             // Font
@@ -346,6 +351,23 @@ const settingsSyncManager = {
             if (settings.downloads) {
                 const dl = settings.downloads;
                 downloadQualitySettings.setQuality(dl.quality);
+
+                if (dl.streamingQuality) {
+                    localStorage.setItem('playback-quality', dl.streamingQuality);
+                }
+
+                if (dl.romajiLyrics !== undefined) {
+                    localStorage.setItem('lyricsRomajiMode', dl.romajiLyrics ? 'true' : 'false');
+                }
+
+                if (dl.filenameTemplate) {
+                    localStorage.setItem('filename-template', dl.filenameTemplate);
+                }
+
+                if (dl.zipFolderTemplate) {
+                    localStorage.setItem('zip-folder-template', dl.zipFolderTemplate);
+                }
+
                 coverArtSizeSettings.setSize(dl.coverArtSize);
                 bulkDownloadSettings.setForceIndividual(dl.bulkForceIndividual);
                 lyricsSettings.setDownloadLyrics(dl.lyricsDownload);
@@ -386,6 +408,11 @@ const settingsSyncManager = {
                 sidebarSectionSettings.setShowAbout(sb.showAbout);
                 sidebarSectionSettings.setShowDownload(sb.showDownload);
                 sidebarSectionSettings.setShowDiscord(sb.showDiscord);
+
+                if (sb.collapsed !== undefined) {
+                    sidebarSettings.setCollapsed(sb.collapsed);
+                }
+
                 if (sb.order) sidebarSectionSettings.setOrder(sb.order);
             }
 
@@ -753,7 +780,12 @@ const settingsSyncManager = {
                     e.key.includes('equalizer') ||
                     e.key.includes('visualizer') ||
                     e.key.includes('font') ||
-                    e.key.includes('settings'))
+                    e.key.includes('settings') ||
+                    e.key === 'playback-quality' ||
+                    e.key === 'lyricsRomajiMode' ||
+                    e.key === 'filename-template' ||
+                    e.key === 'zip-folder-template' ||
+                    e.key.includes('sidebar'))
             ) {
                 this.debouncedSyncToCloud();
             }
