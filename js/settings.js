@@ -14,6 +14,7 @@ import {
     coverArtSizeSettings,
     qualityBadgeSettings,
     trackDateSettings,
+    gaplessPlaybackSettings,
     visualizerSettings,
     bulkDownloadSettings,
     playlistSettings,
@@ -35,6 +36,7 @@ import {
     queueBehaviorSettings,
 } from './storage.js';
 import { audioContextManager, EQ_PRESETS } from './audio-context.js';
+import { getTrackTitle, getTrackArtistsHTML, getTrackYearDisplay, createQualityBadgeHTML } from './utils.js';
 import { getButterchurnPresets } from './visualizers/butterchurn.js';
 import { db } from './db.js';
 import { authManager } from './accounts/auth.js';
@@ -42,6 +44,7 @@ import { syncManager } from './accounts/pocketbase.js';
 import { saveFirebaseConfig, clearFirebaseConfig } from './accounts/config.js';
 
 let settingsPlayer = null;
+let settingsUI = null;
 
 function dispatchSettingsChanged() {
     window.dispatchEvent(new CustomEvent('settings-changed'));
@@ -49,6 +52,7 @@ function dispatchSettingsChanged() {
 
 export function initializeSettings(scrobbler, player, api, ui) {
     settingsPlayer = player;
+    settingsUI = ui;
 
     // Restore last active settings tab
     const savedTab = settingsUiState.getActiveTab();
@@ -460,11 +464,15 @@ export function initializeSettings(scrobbler, player, api, ui) {
     // ========================================
     const scrobblePercentageSlider = document.getElementById('scrobble-percentage-slider');
     const scrobblePercentageInput = document.getElementById('scrobble-percentage-input');
-
-    if (scrobblePercentageSlider && scrobblePercentageInput) {
+    const updateScrobbleThresholdUI = () => {
+        if (!scrobblePercentageSlider || !scrobblePercentageInput) return;
         const percentage = lastFMStorage.getScrobblePercentage();
         scrobblePercentageSlider.value = percentage;
         scrobblePercentageInput.value = percentage;
+    };
+
+    if (scrobblePercentageSlider && scrobblePercentageInput) {
+        updateScrobbleThresholdUI();
 
         scrobblePercentageSlider.addEventListener('input', (e) => {
             const newPercentage = parseInt(e.target.value, 10);
@@ -753,9 +761,19 @@ export function initializeSettings(scrobbler, player, api, ui) {
     const musicProviderSetting = document.getElementById('music-provider-setting');
     if (musicProviderSetting) {
         musicProviderSetting.value = musicProviderSettings.getProvider();
-        musicProviderSetting.addEventListener('change', (e) => {
+        musicProviderSetting.addEventListener('change', async (e) => {
             musicProviderSettings.setProvider(e.target.value);
-            // Reload page to apply changes
+            // Try to sync this reload-required setting before reloading.
+            if (authManager.user && typeof syncManager.syncSettingsNow === 'function') {
+                try {
+                    await Promise.race([
+                        syncManager.syncSettingsNow(),
+                        new Promise((resolve) => setTimeout(resolve, 1500)),
+                    ]);
+                } catch (error) {
+                    console.warn('[Settings] Failed to sync music provider before reload:', error);
+                }
+            }
             window.location.reload();
         });
     }
@@ -800,8 +818,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         showQualityBadgesToggle.checked = qualityBadgeSettings.isEnabled();
         showQualityBadgesToggle.addEventListener('change', (e) => {
             qualityBadgeSettings.setEnabled(e.target.checked);
-            // Re-render queue if available, but don't force navigation to library
-            if (window.renderQueueFunction) window.renderQueueFunction();
+            refreshTrackMetadataUI();
         });
     }
 
@@ -811,6 +828,15 @@ export function initializeSettings(scrobbler, player, api, ui) {
         useAlbumReleaseYearToggle.checked = trackDateSettings.useAlbumYear();
         useAlbumReleaseYearToggle.addEventListener('change', (e) => {
             trackDateSettings.setUseAlbumYear(e.target.checked);
+            refreshTrackMetadataUI();
+        });
+    }
+
+    const gaplessPlaybackToggle = document.getElementById('gapless-playback-toggle');
+    if (gaplessPlaybackToggle) {
+        gaplessPlaybackToggle.checked = gaplessPlaybackSettings.isEnabled();
+        gaplessPlaybackToggle.addEventListener('change', (e) => {
+            gaplessPlaybackSettings.setEnabled(e.target.checked);
         });
     }
 
@@ -1667,6 +1693,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
             const newSensitivity = parseFloat(e.target.value);
             visualizerSettings.setSensitivity(newSensitivity);
             visualizerSensitivityValue.textContent = `${(newSensitivity * 100).toFixed(0)}%`;
+            dispatchSettingsChanged();
         });
     }
 
@@ -1688,6 +1715,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         smartIntensityToggle.addEventListener('change', (e) => {
             visualizerSettings.setSmartIntensity(e.target.checked);
             updateSliderState(e.target.checked);
+            dispatchSettingsChanged();
         });
     }
 
@@ -2200,6 +2228,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         try {
             await api.settings.refreshInstances();
             ui.renderApiSettings();
+            dispatchSettingsChanged();
             btn.textContent = 'Done!';
             setTimeout(() => {
                 btn.textContent = originalText;
@@ -2233,6 +2262,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
         api.settings.saveInstances(instances, type);
         ui.renderApiSettings();
+        dispatchSettingsChanged();
     });
 
     document.getElementById('clear-cache-btn')?.addEventListener('click', async () => {
@@ -2490,6 +2520,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
         updateLibreFmUI();
         updateListenBrainzUI();
         updateMalojaUI();
+        updateScrobbleThresholdUI();
     });
 
     // Listen for external request to update scrobbler UIs
@@ -2499,11 +2530,13 @@ export function initializeSettings(scrobbler, player, api, ui) {
         updateLibreFmUI();
         updateListenBrainzUI();
         updateMalojaUI();
+        updateScrobbleThresholdUI();
     });
 
     // Listen for settings synced from cloud to update UI (no reload to avoid loops)
     window.addEventListener('settings-synced-from-cloud', (event) => {
         console.log('[Settings] Settings synced from cloud, updating UI...');
+        updateAppearanceUI();
         updateThemeUI();
         updateScrobblerUIs();
         updateAudioUI();
@@ -2531,15 +2564,88 @@ function updateThemeUI() {
     }
 }
 
+function updateAppearanceUI() {
+    const fontSizeSlider = document.getElementById('font-size-slider');
+    const fontSizeInput = document.getElementById('font-size-input');
+    const size = fontSettings.getFontSize();
+
+    if (fontSizeSlider) {
+        fontSizeSlider.value = size;
+    }
+    if (fontSizeInput) {
+        fontSizeInput.value = size;
+    }
+}
+
 function updateScrobblerUIs() {
     window.dispatchEvent(new CustomEvent('update-scrobbler-uis'));
 }
 
+function refreshTrackMetadataUI() {
+    if (window.renderQueueFunction) {
+        window.renderQueueFunction();
+    }
+
+    if (!settingsPlayer?.currentTrack) {
+        return;
+    }
+
+    const track = settingsPlayer.currentTrack;
+    const titleEl = document.querySelector('.now-playing-bar .title');
+    const artistEl = document.querySelector('.now-playing-bar .artist');
+    const trackTitle = getTrackTitle(track);
+    const trackArtistsHTML = getTrackArtistsHTML(track);
+    const yearDisplay = getTrackYearDisplay(track);
+
+    if (titleEl) {
+        titleEl.innerHTML = `${trackTitle} ${createQualityBadgeHTML(track)}`.trim();
+    }
+
+    if (artistEl) {
+        artistEl.innerHTML = trackArtistsHTML + yearDisplay;
+        if (!yearDisplay && trackDateSettings.useAlbumYear() && track.album?.id) {
+            settingsPlayer.loadAlbumYear(track, trackArtistsHTML, artistEl);
+        }
+    }
+}
+
 function updateAudioUI() {
-    const eqToggle = document.getElementById('eq-toggle');
+    const eqToggle =
+        document.getElementById('equalizer-enabled-toggle') || document.getElementById('eq-toggle');
     if (eqToggle) {
         eqToggle.checked = equalizerSettings.isEnabled();
     }
+    const eqContainer = document.getElementById('equalizer-container');
+    if (eqContainer) {
+        eqContainer.style.display = equalizerSettings.isEnabled() ? 'block' : 'none';
+    }
+
+    const eqPresetSelect = document.getElementById('equalizer-preset-select');
+    if (eqPresetSelect) {
+        eqPresetSelect.value = equalizerSettings.getPreset();
+    }
+
+    const eqGains = equalizerSettings.getGains();
+    const eqBands = document.querySelectorAll('#equalizer-bands .eq-band');
+    eqBands.forEach((bandEl, index) => {
+        const slider = bandEl.querySelector('.eq-slider');
+        const valueEl = bandEl.querySelector('.eq-value');
+        const gain = eqGains[index] ?? 0;
+
+        if (slider) {
+            slider.value = gain;
+        }
+        if (valueEl) {
+            const numericGain = Number(gain);
+            valueEl.textContent = numericGain > 0 ? `+${numericGain}` : `${numericGain}`;
+            valueEl.classList.remove('positive', 'negative');
+            if (numericGain > 0) {
+                valueEl.classList.add('positive');
+            } else if (numericGain < 0) {
+                valueEl.classList.add('negative');
+            }
+        }
+    });
 
     const replayGainModeSelect = document.getElementById('replay-gain-mode');
     if (replayGainModeSelect) {
@@ -2561,6 +2667,11 @@ function updateAudioUI() {
         exponentialVolumeToggle.checked = exponentialVolumeSettings.isEnabled();
     }
 
+    const gaplessPlaybackToggle = document.getElementById('gapless-playback-toggle');
+    if (gaplessPlaybackToggle) {
+        gaplessPlaybackToggle.checked = gaplessPlaybackSettings.isEnabled();
+    }
+
     const playbackSpeedSlider = document.getElementById('playback-speed-slider');
     const playbackSpeedInput = document.getElementById('playback-speed-input');
     const speed = audioEffectsSettings.getSpeed();
@@ -2572,6 +2683,8 @@ function updateAudioUI() {
     }
 
     // Apply immediate audio effects without requiring a page refresh.
+    audioContextManager.toggleEQ(equalizerSettings.isEnabled());
+    audioContextManager.setAllGains(equalizerSettings.getGains());
     audioContextManager.toggleMonoAudio(monoAudioSettings.isEnabled());
     if (settingsPlayer) {
         settingsPlayer.setPlaybackSpeed(speed);
@@ -2580,7 +2693,8 @@ function updateAudioUI() {
 }
 
 function updateInterfaceUI() {
-    const nowPlayingMode = document.getElementById('now-playing-mode-setting');
+    const nowPlayingMode =
+        document.getElementById('now-playing-mode') || document.getElementById('now-playing-mode-setting');
     if (nowPlayingMode) {
         nowPlayingMode.value = nowPlayingSettings.getMode();
     }
@@ -2600,12 +2714,14 @@ function updateInterfaceUI() {
         smoothScrollingToggle.checked = smoothScrollingSettings.isEnabled();
     }
 
-    const qualityBadgesToggle = document.getElementById('quality-badges-toggle');
+    const qualityBadgesToggle =
+        document.getElementById('show-quality-badges-toggle') || document.getElementById('quality-badges-toggle');
     if (qualityBadgesToggle) {
         qualityBadgesToggle.checked = qualityBadgeSettings.isEnabled();
     }
 
-    const trackDateToggle = document.getElementById('track-date-toggle');
+    const trackDateToggle =
+        document.getElementById('use-album-release-year-toggle') || document.getElementById('track-date-toggle');
     if (trackDateToggle) {
         trackDateToggle.checked = trackDateSettings.useAlbumYear();
     }
@@ -2643,6 +2759,29 @@ function updateInterfaceUI() {
     const visualizerModeSelect = document.getElementById('visualizer-mode-select');
     if (visualizerModeSelect) {
         visualizerModeSelect.value = visualizerSettings.getMode();
+    }
+
+    const visualizerSensitivitySlider = document.getElementById('visualizer-sensitivity-slider');
+    const visualizerSensitivityValue = document.getElementById('visualizer-sensitivity-value');
+    const currentSensitivity = visualizerSettings.getSensitivity();
+    if (visualizerSensitivitySlider) {
+        visualizerSensitivitySlider.value = currentSensitivity;
+    }
+    if (visualizerSensitivityValue) {
+        visualizerSensitivityValue.textContent = `${(currentSensitivity * 100).toFixed(0)}%`;
+    }
+
+    const smartIntensityToggle = document.getElementById('smart-intensity-toggle');
+    const isSmartIntensityEnabled = visualizerSettings.isSmartIntensityEnabled();
+    if (smartIntensityToggle) {
+        smartIntensityToggle.checked = isSmartIntensityEnabled;
+    }
+    if (visualizerSensitivitySlider) {
+        visualizerSensitivitySlider.disabled = isSmartIntensityEnabled;
+        if (visualizerSensitivitySlider.parentElement) {
+            visualizerSensitivitySlider.parentElement.style.opacity = isSmartIntensityEnabled ? '0.5' : '1';
+            visualizerSensitivitySlider.parentElement.style.pointerEvents = isSmartIntensityEnabled ? 'none' : 'auto';
+        }
     }
 
     const visualizerToggle = document.getElementById('visualizer-toggle');
@@ -2739,6 +2878,7 @@ function updateInterfaceUI() {
     if (!dynamicColorSettings.isEnabled()) {
         window.dispatchEvent(new CustomEvent('reset-dynamic-color'));
     }
+    refreshTrackMetadataUI();
 }
 
 function updateDownloadsUI() {
@@ -2817,6 +2957,10 @@ function updateSystemUI() {
     const analyticsToggle = document.getElementById('analytics-toggle');
     if (analyticsToggle) {
         analyticsToggle.checked = analyticsSettings.isEnabled();
+    }
+
+    if (settingsUI && typeof settingsUI.renderApiSettings === 'function') {
+        settingsUI.renderApiSettings();
     }
 }
 
@@ -3020,6 +3164,7 @@ function initializeFontSettings() {
             const size = parseInt(fontSizeSlider.value, 10);
             if (fontSizeInput) fontSizeInput.value = size;
             fontSettings.setFontSize(size);
+            dispatchSettingsChanged();
         });
     }
 
@@ -3031,6 +3176,7 @@ function initializeFontSettings() {
             size = Math.max(50, Math.min(200, size || 100));
             updateFontSizeControls(size);
             fontSettings.setFontSize(size);
+            dispatchSettingsChanged();
         });
 
         // Also update on input for real-time feedback
@@ -3039,6 +3185,7 @@ function initializeFontSettings() {
             if (!isNaN(size) && size >= 50 && size <= 200) {
                 if (fontSizeSlider) fontSizeSlider.value = size;
                 fontSettings.setFontSize(size);
+                dispatchSettingsChanged();
             }
         });
     }
@@ -3047,6 +3194,7 @@ function initializeFontSettings() {
         fontSizeReset.addEventListener('click', () => {
             const defaultSize = fontSettings.resetFontSize();
             updateFontSizeControls(defaultSize);
+            dispatchSettingsChanged();
         });
     }
 }

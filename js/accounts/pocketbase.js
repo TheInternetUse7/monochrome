@@ -19,6 +19,10 @@ const syncManager = {
     _userRecordCache: null,
     _isSyncing: false,
 
+    async syncSettingsNow() {
+        return settingsSyncManager.syncToCloud();
+    },
+
     async _getUserRecord(uid) {
         if (!uid) return null;
 

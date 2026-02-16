@@ -30,6 +30,7 @@ import {
     coverArtSizeSettings,
     qualityBadgeSettings,
     trackDateSettings,
+    gaplessPlaybackSettings,
     visualizerSettings,
     bulkDownloadSettings,
     playlistSettings,
@@ -42,6 +43,10 @@ import {
     fontSettings,
     pwaUpdateSettings,
     sidebarSettings,
+    queueBehaviorSettings,
+    musicProviderSettings,
+    analyticsSettings,
+    apiSettings,
 } from '../storage.js';
 
 let syncDebounceTimer = null;
@@ -152,6 +157,7 @@ const settingsSyncManager = {
                 equalizerPreset: equalizerSettings.getPreset(),
                 monoAudio: monoAudioSettings.isEnabled(),
                 exponentialVolume: exponentialVolumeSettings.isEnabled(),
+                gaplessPlayback: gaplessPlaybackSettings.isEnabled(),
                 audioEffects: {
                     speed: audioEffectsSettings.getSpeed(),
                     pitch: audioEffectsSettings.getPitch(),
@@ -167,6 +173,7 @@ const settingsSyncManager = {
                 smoothScrolling: smoothScrollingSettings.isEnabled(),
                 qualityBadges: qualityBadgeSettings.isEnabled(),
                 trackDateMode: trackDateSettings.useAlbumYear(),
+                closeQueueOnNavigation: queueBehaviorSettings.shouldCloseOnNavigation(),
                 visualizer: {
                     enabled: visualizerSettings.isEnabled(),
                     mode: visualizerSettings.getMode(),
@@ -215,6 +222,7 @@ const settingsSyncManager = {
 
             // Downloads & Playlist
             downloads: {
+                musicProvider: musicProviderSettings.getProvider(),
                 quality: downloadQualitySettings.getQuality(),
                 streamingQuality: localStorage.getItem('playback-quality') || 'HI_RES_LOSSLESS',
                 coverArtSize: coverArtSizeSettings.getSize(),
@@ -229,11 +237,27 @@ const settingsSyncManager = {
             font: {
                 config: fontSettings.getConfig(),
                 customFonts: fontSettings.getCustomFonts(),
+                size: fontSettings.getFontSize(),
             },
 
             // PWA
             pwa: {
                 autoUpdate: pwaUpdateSettings.isAutoUpdateEnabled(),
+            },
+
+            // System
+            system: {
+                analyticsEnabled: analyticsSettings.isEnabled(),
+                apiInstances: (() => {
+                    try {
+                        const stored = localStorage.getItem(apiSettings.STORAGE_KEY);
+                        if (!stored) return null;
+                        const parsed = JSON.parse(stored);
+                        return parsed && typeof parsed === 'object' ? parsed : null;
+                    } catch {
+                        return null;
+                    }
+                })(),
             },
 
             // Metadata
@@ -309,23 +333,48 @@ const settingsSyncManager = {
             // Appearance
             if (settings.appearance) {
                 const app = settings.appearance;
-                themeManager.setTheme(app.theme);
+                if (app.theme !== undefined) {
+                    themeManager.setTheme(app.theme);
+                }
                 if (app.customTheme) themeManager.setCustomTheme(app.customTheme);
-                nowPlayingSettings.setMode(app.nowPlayingMode);
-                backgroundSettings.setEnabled(app.backgroundEnabled);
-                dynamicColorSettings.setEnabled(app.dynamicColorEnabled);
+                if (app.nowPlayingMode !== undefined) {
+                    nowPlayingSettings.setMode(app.nowPlayingMode);
+                }
+                if (app.backgroundEnabled !== undefined) {
+                    backgroundSettings.setEnabled(app.backgroundEnabled);
+                }
+                if (app.dynamicColorEnabled !== undefined) {
+                    dynamicColorSettings.setEnabled(app.dynamicColorEnabled);
+                }
             }
 
             // Audio
             if (settings.audio) {
                 const audio = settings.audio;
-                replayGainSettings.setMode(audio.replayGainMode);
-                replayGainSettings.setPreamp(audio.replayGainPreamp);
-                equalizerSettings.setEnabled(audio.equalizerEnabled);
-                equalizerSettings.setGains(audio.equalizerGains);
-                equalizerSettings.setPreset(audio.equalizerPreset);
-                monoAudioSettings.setEnabled(audio.monoAudio);
-                exponentialVolumeSettings.setEnabled(audio.exponentialVolume);
+                if (audio.replayGainMode !== undefined) {
+                    replayGainSettings.setMode(audio.replayGainMode);
+                }
+                if (audio.replayGainPreamp !== undefined) {
+                    replayGainSettings.setPreamp(audio.replayGainPreamp);
+                }
+                if (audio.equalizerEnabled !== undefined) {
+                    equalizerSettings.setEnabled(audio.equalizerEnabled);
+                }
+                if (audio.equalizerGains !== undefined) {
+                    equalizerSettings.setGains(audio.equalizerGains);
+                }
+                if (audio.equalizerPreset !== undefined) {
+                    equalizerSettings.setPreset(audio.equalizerPreset);
+                }
+                if (audio.monoAudio !== undefined) {
+                    monoAudioSettings.setEnabled(audio.monoAudio);
+                }
+                if (audio.exponentialVolume !== undefined) {
+                    exponentialVolumeSettings.setEnabled(audio.exponentialVolume);
+                }
+                if (audio.gaplessPlayback !== undefined) {
+                    gaplessPlaybackSettings.setEnabled(audio.gaplessPlayback);
+                }
                 if (audio.audioEffects) {
                     if (typeof audioEffectsSettings.setSpeed === 'function') {
                         audioEffectsSettings.setSpeed(audio.audioEffects.speed);
@@ -346,8 +395,15 @@ const settingsSyncManager = {
                 cardSettings.setCompactAlbum(ui.compactAlbum);
                 waveformSettings.setEnabled(ui.waveformEnabled);
                 smoothScrollingSettings.setEnabled(ui.smoothScrolling);
-                qualityBadgeSettings.setEnabled(ui.qualityBadges);
-                trackDateSettings.setUseAlbumYear(ui.trackDateMode);
+                if (ui.qualityBadges !== undefined) {
+                    qualityBadgeSettings.setEnabled(ui.qualityBadges);
+                }
+                if (ui.trackDateMode !== undefined) {
+                    trackDateSettings.setUseAlbumYear(ui.trackDateMode);
+                }
+                if (ui.closeQueueOnNavigation !== undefined) {
+                    queueBehaviorSettings.setCloseOnNavigation(ui.closeQueueOnNavigation);
+                }
                 if (ui.visualizer) {
                     const vis = ui.visualizer;
                     visualizerSettings.setEnabled(vis.enabled);
@@ -364,6 +420,14 @@ const settingsSyncManager = {
             // Downloads
             if (settings.downloads) {
                 const dl = settings.downloads;
+                if (dl.musicProvider !== undefined) {
+                    const currentProvider = musicProviderSettings.getProvider();
+                    musicProviderSettings.setProvider(dl.musicProvider);
+                    if (dl.musicProvider !== currentProvider) {
+                        requiresReload = true;
+                    }
+                }
+
                 downloadQualitySettings.setQuality(dl.quality);
 
                 if (dl.streamingQuality) {
@@ -435,23 +499,44 @@ const settingsSyncManager = {
             }
 
             // Font
-            if (settings.font?.config) {
-                const currentConfig = fontSettings.getConfig();
-                const nextConfig = settings.font.config;
-                if (JSON.stringify(currentConfig) !== JSON.stringify(nextConfig)) {
-                    fontSettings.setConfig(nextConfig);
-                    try {
-                        fontSettings.applyFont();
-                    } catch (error) {
-                        console.warn('[SettingsSync] Font apply requires refresh fallback:', error);
-                        requiresReload = true;
+            if (settings.font) {
+                if (settings.font.config) {
+                    const currentConfig = fontSettings.getConfig();
+                    const nextConfig = settings.font.config;
+                    if (JSON.stringify(currentConfig) !== JSON.stringify(nextConfig)) {
+                        fontSettings.setConfig(nextConfig);
+                        try {
+                            fontSettings.applyFont();
+                        } catch (error) {
+                            console.warn('[SettingsSync] Font apply requires refresh fallback:', error);
+                            requiresReload = true;
+                        }
                     }
+                }
+
+                if (settings.font.size !== undefined) {
+                    fontSettings.setFontSize(settings.font.size);
                 }
             }
 
             // PWA
             if (settings.pwa) {
                 pwaUpdateSettings.setAutoUpdateEnabled(settings.pwa.autoUpdate);
+            }
+
+            // System
+            if (settings.system) {
+                const system = settings.system;
+                if (system.analyticsEnabled !== undefined) {
+                    analyticsSettings.setEnabled(system.analyticsEnabled);
+                }
+                if (
+                    system.apiInstances &&
+                    typeof system.apiInstances === 'object' &&
+                    (Array.isArray(system.apiInstances.api) || Array.isArray(system.apiInstances.streaming))
+                ) {
+                    apiSettings.saveInstances(system.apiInstances);
+                }
             }
 
             this._lastApplyRequiresReload = requiresReload;
@@ -937,6 +1022,9 @@ const settingsSyncManager = {
                     e.key.includes('font') ||
                     e.key.includes('settings') ||
                     e.key === 'playback-quality' ||
+                    e.key === musicProviderSettings.STORAGE_KEY ||
+                    e.key === analyticsSettings.ENABLED_KEY ||
+                    e.key === apiSettings.STORAGE_KEY ||
                     e.key === 'lyricsRomajiMode' ||
                     e.key === 'filename-template' ||
                     e.key === 'zip-folder-template' ||

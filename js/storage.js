@@ -109,7 +109,9 @@ export const apiSettings = {
             instancesObj = await this.loadInstancesFromGitHub();
         }
 
-        const targetUrls = instancesObj[type] || instancesObj.api || [];
+        const typeUrls = Array.isArray(instancesObj[type]) ? instancesObj[type] : [];
+        const apiUrls = Array.isArray(instancesObj.api) ? instancesObj.api : [];
+        const targetUrls = typeUrls.length > 0 ? typeUrls : apiUrls;
         if (targetUrls.length === 0) return [];
 
         return targetUrls;
@@ -571,6 +573,23 @@ export const trackDateSettings = {
     },
 
     setUseAlbumYear(enabled) {
+        localStorage.setItem(this.STORAGE_KEY, enabled ? 'true' : 'false');
+    },
+};
+
+export const gaplessPlaybackSettings = {
+    STORAGE_KEY: 'gapless-playback-enabled',
+
+    isEnabled() {
+        try {
+            const val = localStorage.getItem(this.STORAGE_KEY);
+            return val === null ? true : val === 'true';
+        } catch {
+            return true;
+        }
+    },
+
+    setEnabled(enabled) {
         localStorage.setItem(this.STORAGE_KEY, enabled ? 'true' : 'false');
     },
 };
@@ -2349,6 +2368,7 @@ export const resetAllLocalSettings = () => {
         smoothScrollingSettings.STORAGE_KEY,
         qualityBadgeSettings.STORAGE_KEY,
         trackDateSettings.STORAGE_KEY,
+        gaplessPlaybackSettings.STORAGE_KEY,
         bulkDownloadSettings.STORAGE_KEY,
         playlistSettings.M3U_KEY,
         playlistSettings.M3U8_KEY,

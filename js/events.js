@@ -12,7 +12,7 @@ import {
     positionMenu,
     getShareUrl,
 } from './utils.js';
-import { lastFMStorage, libreFmSettings, waveformSettings } from './storage.js';
+import { lastFMStorage, libreFmSettings, waveformSettings, gaplessPlaybackSettings } from './storage.js';
 import { showNotification, downloadTrackWithMetadata, downloadAlbumAsZip, downloadPlaylistAsZip } from './downloads.js';
 import { downloadQualitySettings } from './storage.js';
 import { updateTabTitle, navigate } from './router.js';
@@ -125,7 +125,13 @@ export function initializePlayerEvents(player, audioPlayer, scrobbler, ui) {
     });
 
     audioPlayer.addEventListener('ended', () => {
-        player.playNext();
+        if (gaplessPlaybackSettings.isEnabled()) {
+            player.playNext();
+            return;
+        }
+
+        // Non-gapless mode: add a tiny gap before advancing.
+        setTimeout(() => player.playNext(), 200);
     });
 
     audioPlayer.addEventListener('timeupdate', async () => {
