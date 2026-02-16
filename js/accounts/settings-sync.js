@@ -49,7 +49,10 @@ const SYNC_DEBOUNCE_MS = 200;
 
 let pollingInterval = null;
 const POLLING_INTERVAL_MS = 5000; // Check for cloud changes every 5 seconds
+const REALTIME_FALLBACK_POLLING_INTERVAL_MS = 8000; // Keep fallback fairly responsive
 let lastSettingsHash = null;
+let lastLocalSettingsFingerprint = null;
+let realtimeSyncTimer = null;
 
 // Store the current passphrase in memory for the session
 let currentPassphrase = null;
@@ -58,6 +61,9 @@ const settingsSyncManager = {
     _isSyncing: false,
     _isWatching: false,
     _observers: [],
+    _realtimeTopic: null,
+    _realtimeUnsubscribe: null,
+    _lastApplyRequiresReload: false,
 
     async _getUserRecord() {
         const user = authManager.user;
@@ -245,6 +251,8 @@ const settingsSyncManager = {
         }
 
         try {
+            let requiresReload = false;
+
             // Scrobbling services
             if (settings.scrobbling?.lastfm) {
                 const lf = settings.scrobbling.lastfm;
@@ -319,9 +327,15 @@ const settingsSyncManager = {
                 monoAudioSettings.setEnabled(audio.monoAudio);
                 exponentialVolumeSettings.setEnabled(audio.exponentialVolume);
                 if (audio.audioEffects) {
-                    audioEffectsSettings.setSpeed(audio.audioEffects.speed);
-                    audioEffectsSettings.setPitch(audio.audioEffects.pitch);
-                    audioEffectsSettings.setPreservePitch(audio.audioEffects.preservePitch);
+                    if (typeof audioEffectsSettings.setSpeed === 'function') {
+                        audioEffectsSettings.setSpeed(audio.audioEffects.speed);
+                    }
+                    if (typeof audioEffectsSettings.setPitch === 'function') {
+                        audioEffectsSettings.setPitch(audio.audioEffects.pitch);
+                    }
+                    if (typeof audioEffectsSettings.setPreservePitch === 'function') {
+                        audioEffectsSettings.setPreservePitch(audio.audioEffects.preservePitch);
+                    }
                 }
             }
 
@@ -410,7 +424,11 @@ const settingsSyncManager = {
                 sidebarSectionSettings.setShowDiscord(sb.showDiscord);
 
                 if (sb.collapsed !== undefined) {
+                    const wasCollapsed = sidebarSettings.isCollapsed();
                     sidebarSettings.setCollapsed(sb.collapsed);
+                    if (wasCollapsed !== sb.collapsed) {
+                        document.body.classList.toggle('sidebar-collapsed', sb.collapsed);
+                    }
                 }
 
                 if (sb.order) sidebarSectionSettings.setOrder(sb.order);
@@ -418,7 +436,17 @@ const settingsSyncManager = {
 
             // Font
             if (settings.font?.config) {
-                fontSettings.setConfig(settings.font.config);
+                const currentConfig = fontSettings.getConfig();
+                const nextConfig = settings.font.config;
+                if (JSON.stringify(currentConfig) !== JSON.stringify(nextConfig)) {
+                    fontSettings.setConfig(nextConfig);
+                    try {
+                        fontSettings.applyFont();
+                    } catch (error) {
+                        console.warn('[SettingsSync] Font apply requires refresh fallback:', error);
+                        requiresReload = true;
+                    }
+                }
             }
 
             // PWA
@@ -426,6 +454,7 @@ const settingsSyncManager = {
                 pwaUpdateSettings.setAutoUpdateEnabled(settings.pwa.autoUpdate);
             }
 
+            this._lastApplyRequiresReload = requiresReload;
             return true;
         } catch (error) {
             console.error('[SettingsSync] Failed to apply settings:', error);
@@ -620,6 +649,7 @@ const settingsSyncManager = {
 
             // Update hash so we don't detect our own changes
             lastSettingsHash = encrypted.substring(0, 50);
+            lastLocalSettingsFingerprint = this._getLocalSettingsFingerprint();
 
             console.log('[SettingsSync] ✓ Settings synced to cloud');
             return true;
@@ -668,7 +698,12 @@ const settingsSyncManager = {
                 console.log('[SettingsSync] ✓ Settings synced from cloud');
                 // Update hash to prevent re-syncing same changes
                 lastSettingsHash = record.settings.substring(0, 50);
-                window.dispatchEvent(new CustomEvent('settings-synced-from-cloud'));
+                lastLocalSettingsFingerprint = this._getLocalSettingsFingerprint();
+                window.dispatchEvent(
+                    new CustomEvent('settings-synced-from-cloud', {
+                        detail: { requiresReload: this._lastApplyRequiresReload === true },
+                    })
+                );
             }
             return applied;
         } catch (error) {
@@ -705,6 +740,12 @@ const settingsSyncManager = {
     async _pollForChanges() {
         const user = authManager.user;
         if (!user || this._isSyncing) return;
+
+        // Ensure local changes are pushed even if a settingsChanged event was missed.
+        const localChanged = await this._syncLocalChangesIfNeeded();
+        if (localChanged) {
+            return;
+        }
 
         // Skip polling if we don't have a passphrase and one is required
         const hasLocal = await hasPassphrase();
@@ -763,6 +804,120 @@ const settingsSyncManager = {
         }
     },
 
+    _getLocalSettingsFingerprint() {
+        try {
+            const settings = this.collectAllSettings();
+            if (!settings || typeof settings !== 'object') return null;
+            // Ignore volatile timestamp field in change detection.
+            delete settings._syncedAt;
+            return JSON.stringify(settings);
+        } catch {
+            return null;
+        }
+    },
+
+    async _syncLocalChangesIfNeeded() {
+        const current = this._getLocalSettingsFingerprint();
+        if (!current) return false;
+
+        if (lastLocalSettingsFingerprint === null) {
+            lastLocalSettingsFingerprint = current;
+            return false;
+        }
+
+        if (current === lastLocalSettingsFingerprint) {
+            return false;
+        }
+
+        console.log('[SettingsSync] Local settings change detected, syncing to cloud...');
+        const success = await this.syncToCloud();
+        if (success) {
+            lastLocalSettingsFingerprint = current;
+            return true;
+        }
+
+        return false;
+    },
+
+    _startPolling(intervalMs = POLLING_INTERVAL_MS) {
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+        }
+        pollingInterval = setInterval(() => this._pollForChanges(), intervalMs);
+    },
+
+    async _stopRealtimeSubscription() {
+        if (realtimeSyncTimer) {
+            clearTimeout(realtimeSyncTimer);
+            realtimeSyncTimer = null;
+        }
+
+        const topic = this._realtimeTopic;
+        const unsubscribe = this._realtimeUnsubscribe;
+        this._realtimeTopic = null;
+        this._realtimeUnsubscribe = null;
+
+        try {
+            if (typeof unsubscribe === 'function') {
+                await unsubscribe();
+                return;
+            }
+
+            if (topic) {
+                await pb.collection('DB_users').unsubscribe(topic);
+            }
+        } catch (error) {
+            console.warn('[SettingsSync] Failed to stop realtime subscription:', error);
+        }
+    },
+
+    async _startRealtimeSubscription() {
+        const user = authManager.user;
+        if (!user) return false;
+
+        await this._stopRealtimeSubscription();
+
+        try {
+            const record = await this._getUserRecord();
+            if (!record) return false;
+
+            const topic = record.id;
+            const unsubscribe = await pb.collection('DB_users').subscribe(
+                topic,
+                async (event) => {
+                    if (!this._isWatching || this._isSyncing) return;
+
+                    const remoteSettings = event?.record?.settings;
+                    if (!remoteSettings) return;
+
+                    const remoteHash = remoteSettings.substring(0, 50);
+                    if (!remoteHash || remoteHash === lastSettingsHash) return;
+
+                    // Prevent duplicate burst processing from SSE reconnects.
+                    if (realtimeSyncTimer) {
+                        clearTimeout(realtimeSyncTimer);
+                    }
+                    realtimeSyncTimer = setTimeout(async () => {
+                        realtimeSyncTimer = null;
+                        if (!this._isWatching || this._isSyncing) return;
+
+                        console.log('[SettingsSync] Realtime cloud settings update detected, syncing...');
+                        lastSettingsHash = remoteHash;
+                        await this.syncFromCloud();
+                    }, 120);
+                },
+                { query: { f_id: user.uid } }
+            );
+
+            this._realtimeTopic = topic;
+            this._realtimeUnsubscribe = unsubscribe;
+            return true;
+        } catch (error) {
+            console.warn('[SettingsSync] Realtime subscription unavailable, using polling fallback:', error);
+            return false;
+        }
+    },
+
     startWatching() {
         if (this._isWatching) return;
         this._isWatching = true;
@@ -799,19 +954,34 @@ const settingsSyncManager = {
         window.addEventListener('settings-changed', handleCustomEvent);
         this._observers.push(() => window.removeEventListener('settings-changed', handleCustomEvent));
 
-        // Start polling for cloud changes
-        this._getSettingsHash().then((hash) => {
+        // Establish cloud watch: realtime first, polling fallback always enabled.
+        this._getSettingsHash().then(async (hash) => {
+            if (!this._isWatching) return;
             lastSettingsHash = hash;
+            lastLocalSettingsFingerprint = this._getLocalSettingsFingerprint();
+            const realtimeEnabled = await this._startRealtimeSubscription();
+            if (!this._isWatching) {
+                await this._stopRealtimeSubscription();
+                return;
+            }
+            if (realtimeEnabled) {
+                this._startPolling(REALTIME_FALLBACK_POLLING_INTERVAL_MS);
+                console.log(
+                    `[SettingsSync] Started watching (realtime + ${REALTIME_FALLBACK_POLLING_INTERVAL_MS / 1000}s fallback polling)`
+                );
+            } else {
+                this._startPolling(POLLING_INTERVAL_MS);
+                console.log(`[SettingsSync] Started watching (polling every ${POLLING_INTERVAL_MS / 1000}s)`);
+            }
         });
-        pollingInterval = setInterval(() => this._pollForChanges(), POLLING_INTERVAL_MS);
-
-        console.log('[SettingsSync] Started watching for changes (polling every 5s)');
     },
 
     stopWatching() {
         this._observers.forEach((cleanup) => cleanup());
         this._observers = [];
         this._isWatching = false;
+
+        void this._stopRealtimeSubscription();
 
         if (pollingInterval) {
             clearInterval(pollingInterval);

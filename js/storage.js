@@ -1188,6 +1188,8 @@ export const exponentialVolumeSettings = {
 
 export const audioEffectsSettings = {
     SPEED_KEY: 'audio-effects-speed',
+    PITCH_KEY: 'audio-effects-pitch',
+    PRESERVE_PITCH_KEY: 'audio-effects-preserve-pitch',
 
     // Playback speed (0.01 to 100, default 1.0)
     getSpeed() {
@@ -1202,6 +1204,35 @@ export const audioEffectsSettings = {
     setSpeed(speed) {
         const validSpeed = Math.max(0.01, Math.min(100, parseFloat(speed) || 1.0));
         localStorage.setItem(this.SPEED_KEY, validSpeed.toString());
+    },
+
+    // Pitch multiplier (0.01 to 100, default 1.0)
+    getPitch() {
+        try {
+            const val = parseFloat(localStorage.getItem(this.PITCH_KEY));
+            return isNaN(val) ? 1.0 : Math.max(0.01, Math.min(100, val));
+        } catch {
+            return 1.0;
+        }
+    },
+
+    setPitch(pitch) {
+        const validPitch = Math.max(0.01, Math.min(100, parseFloat(pitch) || 1.0));
+        localStorage.setItem(this.PITCH_KEY, validPitch.toString());
+    },
+
+    // Preserve pitch when changing speed (default true)
+    getPreservePitch() {
+        try {
+            const val = localStorage.getItem(this.PRESERVE_PITCH_KEY);
+            return val === null ? true : val === 'true';
+        } catch {
+            return true;
+        }
+    },
+
+    setPreservePitch(enabled) {
+        localStorage.setItem(this.PRESERVE_PITCH_KEY, enabled ? 'true' : 'false');
     },
 };
 

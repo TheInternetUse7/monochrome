@@ -4437,6 +4437,11 @@ input:checked + .slider::before {
     align-items: stretch;
 }
 
+.settings-sync-notification span {
+    color: var(--muted-foreground);
+    font-size: 0.9rem;
+}
+
 .update-notification-actions {
     display: flex;
     align-items: center;

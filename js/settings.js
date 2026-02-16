@@ -41,7 +41,15 @@ import { authManager } from './accounts/auth.js';
 import { syncManager } from './accounts/pocketbase.js';
 import { saveFirebaseConfig, clearFirebaseConfig } from './accounts/config.js';
 
+let settingsPlayer = null;
+
+function dispatchSettingsChanged() {
+    window.dispatchEvent(new CustomEvent('settings-changed'));
+}
+
 export function initializeSettings(scrobbler, player, api, ui) {
+    settingsPlayer = player;
+
     // Restore last active settings tab
     const savedTab = settingsUiState.getActiveTab();
     const settingsTab = document.querySelector(`.settings-tab[data-tab="${savedTab}"]`);
@@ -54,6 +62,31 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
     // Initialize account system UI & Settings
     authManager.updateUI(authManager.user);
+
+    // Ensure settings changes are always broadcast for cloud sync.
+    const settingsPage = document.getElementById('page-settings');
+    if (settingsPage && settingsPage.dataset.cloudSyncWatcher !== 'true') {
+        settingsPage.addEventListener('change', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            if (target.id === 'settings-search-input' || target.id === 'auth-email' || target.id === 'auth-password') {
+                return;
+            }
+            dispatchSettingsChanged();
+        });
+        settingsPage.dataset.cloudSyncWatcher = 'true';
+    }
+
+    const themePickerRoot = document.getElementById('theme-picker');
+    if (themePickerRoot && themePickerRoot.dataset.cloudSyncWatcher !== 'true') {
+        themePickerRoot.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target instanceof Element && target.closest('.theme-option')) {
+                dispatchSettingsChanged();
+            }
+        });
+        themePickerRoot.dataset.cloudSyncWatcher = 'true';
+    }
 
     // Email Auth UI Logic
     const toggleEmailBtn = document.getElementById('toggle-email-auth-btn');
@@ -2469,12 +2502,17 @@ export function initializeSettings(scrobbler, player, api, ui) {
     });
 
     // Listen for settings synced from cloud to update UI (no reload to avoid loops)
-    window.addEventListener('settings-synced-from-cloud', () => {
+    window.addEventListener('settings-synced-from-cloud', (event) => {
         console.log('[Settings] Settings synced from cloud, updating UI...');
         updateThemeUI();
         updateScrobblerUIs();
         updateAudioUI();
         updateInterfaceUI();
+        updateDownloadsUI();
+        updateSystemUI();
+        if (event?.detail?.requiresReload) {
+            showSettingsRefreshBanner();
+        }
     });
 }
 
@@ -2522,9 +2560,36 @@ function updateAudioUI() {
     if (exponentialVolumeToggle) {
         exponentialVolumeToggle.checked = exponentialVolumeSettings.isEnabled();
     }
+
+    const playbackSpeedSlider = document.getElementById('playback-speed-slider');
+    const playbackSpeedInput = document.getElementById('playback-speed-input');
+    const speed = audioEffectsSettings.getSpeed();
+    if (playbackSpeedSlider) {
+        playbackSpeedSlider.value = Math.max(0.25, Math.min(4.0, speed));
+    }
+    if (playbackSpeedInput) {
+        playbackSpeedInput.value = speed;
+    }
+
+    // Apply immediate audio effects without requiring a page refresh.
+    audioContextManager.toggleMonoAudio(monoAudioSettings.isEnabled());
+    if (settingsPlayer) {
+        settingsPlayer.setPlaybackSpeed(speed);
+        settingsPlayer.applyReplayGain();
+    }
 }
 
 function updateInterfaceUI() {
+    const nowPlayingMode = document.getElementById('now-playing-mode-setting');
+    if (nowPlayingMode) {
+        nowPlayingMode.value = nowPlayingSettings.getMode();
+    }
+
+    const queueCloseOnNavigationToggle = document.getElementById('queue-close-on-navigation-toggle');
+    if (queueCloseOnNavigationToggle) {
+        queueCloseOnNavigationToggle.checked = queueBehaviorSettings.shouldCloseOnNavigation();
+    }
+
     const waveformToggle = document.getElementById('waveform-toggle');
     if (waveformToggle) {
         waveformToggle.checked = waveformSettings.isEnabled();
@@ -2555,6 +2620,31 @@ function updateInterfaceUI() {
         compactAlbumToggle.checked = cardSettings.isCompactAlbum();
     }
 
+    const downloadLyricsToggle = document.getElementById('download-lyrics-toggle');
+    if (downloadLyricsToggle) {
+        downloadLyricsToggle.checked = lyricsSettings.shouldDownloadLyrics();
+    }
+
+    const romajiLyricsToggle = document.getElementById('romaji-lyrics-toggle');
+    if (romajiLyricsToggle) {
+        romajiLyricsToggle.checked = localStorage.getItem('lyricsRomajiMode') === 'true';
+    }
+
+    const albumBackgroundToggle = document.getElementById('album-background-toggle');
+    if (albumBackgroundToggle) {
+        albumBackgroundToggle.checked = backgroundSettings.isEnabled();
+    }
+
+    const dynamicColorToggle = document.getElementById('dynamic-color-toggle');
+    if (dynamicColorToggle) {
+        dynamicColorToggle.checked = dynamicColorSettings.isEnabled();
+    }
+
+    const visualizerModeSelect = document.getElementById('visualizer-mode-select');
+    if (visualizerModeSelect) {
+        visualizerModeSelect.value = visualizerSettings.getMode();
+    }
+
     const visualizerToggle = document.getElementById('visualizer-toggle');
     if (visualizerToggle) {
         visualizerToggle.checked = visualizerSettings.isEnabled();
@@ -2564,6 +2654,201 @@ function updateInterfaceUI() {
     if (visualizerPresetSelect) {
         visualizerPresetSelect.value = visualizerSettings.getPreset();
     }
+
+    const showRecommendedSongsToggle = document.getElementById('show-recommended-songs-toggle');
+    if (showRecommendedSongsToggle) {
+        showRecommendedSongsToggle.checked = homePageSettings.shouldShowRecommendedSongs();
+    }
+
+    const showRecommendedAlbumsToggle = document.getElementById('show-recommended-albums-toggle');
+    if (showRecommendedAlbumsToggle) {
+        showRecommendedAlbumsToggle.checked = homePageSettings.shouldShowRecommendedAlbums();
+    }
+
+    const showRecommendedArtistsToggle = document.getElementById('show-recommended-artists-toggle');
+    if (showRecommendedArtistsToggle) {
+        showRecommendedArtistsToggle.checked = homePageSettings.shouldShowRecommendedArtists();
+    }
+
+    const showJumpBackInToggle = document.getElementById('show-jump-back-in-toggle');
+    if (showJumpBackInToggle) {
+        showJumpBackInToggle.checked = homePageSettings.shouldShowJumpBackIn();
+    }
+
+    const showEditorsPicksToggle = document.getElementById('show-editors-picks-toggle');
+    if (showEditorsPicksToggle) {
+        showEditorsPicksToggle.checked = homePageSettings.shouldShowEditorsPicks();
+    }
+
+    const shuffleEditorsPicksToggle = document.getElementById('shuffle-editors-picks-toggle');
+    if (shuffleEditorsPicksToggle) {
+        shuffleEditorsPicksToggle.checked = homePageSettings.shouldShuffleEditorsPicks();
+    }
+
+    const sidebarShowHomeToggle = document.getElementById('sidebar-show-home-toggle');
+    if (sidebarShowHomeToggle) {
+        sidebarShowHomeToggle.checked = sidebarSectionSettings.shouldShowHome();
+    }
+
+    const sidebarShowLibraryToggle = document.getElementById('sidebar-show-library-toggle');
+    if (sidebarShowLibraryToggle) {
+        sidebarShowLibraryToggle.checked = sidebarSectionSettings.shouldShowLibrary();
+    }
+
+    const sidebarShowRecentToggle = document.getElementById('sidebar-show-recent-toggle');
+    if (sidebarShowRecentToggle) {
+        sidebarShowRecentToggle.checked = sidebarSectionSettings.shouldShowRecent();
+    }
+
+    const sidebarShowUnreleasedToggle = document.getElementById('sidebar-show-unreleased-toggle');
+    if (sidebarShowUnreleasedToggle) {
+        sidebarShowUnreleasedToggle.checked = sidebarSectionSettings.shouldShowUnreleased();
+    }
+
+    const sidebarShowDonateToggle = document.getElementById('sidebar-show-donate-toggle');
+    if (sidebarShowDonateToggle) {
+        sidebarShowDonateToggle.checked = sidebarSectionSettings.shouldShowDonate();
+    }
+
+    const sidebarShowAccountToggle = document.getElementById('sidebar-show-account-toggle');
+    if (sidebarShowAccountToggle) {
+        sidebarShowAccountToggle.checked = sidebarSectionSettings.shouldShowAccount();
+    }
+
+    const sidebarShowAboutToggle = document.getElementById('sidebar-show-about-bottom-toggle');
+    if (sidebarShowAboutToggle) {
+        sidebarShowAboutToggle.checked = sidebarSectionSettings.shouldShowAbout();
+    }
+
+    const sidebarShowDownloadToggle = document.getElementById('sidebar-show-download-bottom-toggle');
+    if (sidebarShowDownloadToggle) {
+        sidebarShowDownloadToggle.checked = sidebarSectionSettings.shouldShowDownload();
+    }
+
+    const sidebarShowDiscordToggle = document.getElementById('sidebar-show-discordbtn-toggle');
+    if (sidebarShowDiscordToggle) {
+        sidebarShowDiscordToggle.checked = sidebarSectionSettings.shouldShowDiscord();
+    }
+
+    // Apply immediate UI-side effects for common toggles.
+    sidebarSectionSettings.applySidebarVisibility();
+    window.dispatchEvent(new CustomEvent('waveform-toggle', { detail: { enabled: waveformSettings.isEnabled() } }));
+    window.dispatchEvent(
+        new CustomEvent('smooth-scrolling-toggle', { detail: { enabled: smoothScrollingSettings.isEnabled() } })
+    );
+    if (!dynamicColorSettings.isEnabled()) {
+        window.dispatchEvent(new CustomEvent('reset-dynamic-color'));
+    }
+}
+
+function updateDownloadsUI() {
+    const musicProviderSetting = document.getElementById('music-provider-setting');
+    if (musicProviderSetting) {
+        musicProviderSetting.value = musicProviderSettings.getProvider();
+    }
+
+    const streamingQualitySetting = document.getElementById('streaming-quality-setting');
+    if (streamingQualitySetting) {
+        streamingQualitySetting.value = localStorage.getItem('playback-quality') || 'HI_RES_LOSSLESS';
+    }
+
+    const downloadQualitySetting = document.getElementById('download-quality-setting');
+    if (downloadQualitySetting) {
+        downloadQualitySetting.value = downloadQualitySettings.getQuality();
+    }
+
+    const coverArtSizeSetting = document.getElementById('cover-art-size-setting');
+    if (coverArtSizeSetting) {
+        coverArtSizeSetting.value = coverArtSizeSettings.getSize();
+    }
+
+    const zippedBulkDownloadsToggle = document.getElementById('zipped-bulk-downloads-toggle');
+    if (zippedBulkDownloadsToggle) {
+        zippedBulkDownloadsToggle.checked = !bulkDownloadSettings.shouldForceIndividual();
+    }
+
+    const filenameTemplate = document.getElementById('filename-template');
+    if (filenameTemplate) {
+        filenameTemplate.value = localStorage.getItem('filename-template') || '{trackNumber} - {artist} - {title}';
+    }
+
+    const zipFolderTemplate = document.getElementById('zip-folder-template');
+    if (zipFolderTemplate) {
+        zipFolderTemplate.value = localStorage.getItem('zip-folder-template') || '{albumTitle} - {albumArtist}';
+    }
+
+    const generateM3UToggle = document.getElementById('generate-m3u-toggle');
+    if (generateM3UToggle) {
+        generateM3UToggle.checked = playlistSettings.shouldGenerateM3U();
+    }
+
+    const generateM3U8Toggle = document.getElementById('generate-m3u8-toggle');
+    if (generateM3U8Toggle) {
+        generateM3U8Toggle.checked = playlistSettings.shouldGenerateM3U8();
+    }
+
+    const generateCUEtoggle = document.getElementById('generate-cue-toggle');
+    if (generateCUEtoggle) {
+        generateCUEtoggle.checked = playlistSettings.shouldGenerateCUE();
+    }
+
+    const generateNFOtoggle = document.getElementById('generate-nfo-toggle');
+    if (generateNFOtoggle) {
+        generateNFOtoggle.checked = playlistSettings.shouldGenerateNFO();
+    }
+
+    const generateJSONtoggle = document.getElementById('generate-json-toggle');
+    if (generateJSONtoggle) {
+        generateJSONtoggle.checked = playlistSettings.shouldGenerateJSON();
+    }
+
+    const relativePathsToggle = document.getElementById('relative-paths-toggle');
+    if (relativePathsToggle) {
+        relativePathsToggle.checked = playlistSettings.shouldUseRelativePaths();
+    }
+}
+
+function updateSystemUI() {
+    const pwaAutoUpdateToggle = document.getElementById('pwa-auto-update-toggle');
+    if (pwaAutoUpdateToggle) {
+        pwaAutoUpdateToggle.checked = pwaUpdateSettings.isAutoUpdateEnabled();
+    }
+
+    const analyticsToggle = document.getElementById('analytics-toggle');
+    if (analyticsToggle) {
+        analyticsToggle.checked = analyticsSettings.isEnabled();
+    }
+}
+
+function showSettingsRefreshBanner() {
+    const existing = document.querySelector('.settings-sync-notification');
+    if (existing) {
+        existing.remove();
+    }
+
+    const notification = document.createElement('div');
+    notification.className = 'update-notification settings-sync-notification';
+    notification.innerHTML = `
+        <strong>Settings updated from another device</strong>
+        <span>Some effects may need a refresh to fully apply.</span>
+        <div class="update-notification-actions">
+            <button class="btn btn-primary">Refresh now</button>
+            <button class="btn-icon" aria-label="Dismiss">×</button>
+        </div>
+    `;
+
+    const refreshBtn = notification.querySelector('.btn-primary');
+    const dismissBtn = notification.querySelector('.btn-icon');
+
+    refreshBtn?.addEventListener('click', () => {
+        window.location.reload();
+    });
+
+    dismissBtn?.addEventListener('click', () => {
+        notification.remove();
+    });
+
+    document.body.appendChild(notification);
 }
 
 function initializeFontSettings() {
