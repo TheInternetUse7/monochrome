@@ -10,6 +10,7 @@ import {
     createUserWithEmailAndPassword,
     sendPasswordResetEmail,
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+import { isPocketBaseConfiguredByEnv } from '../runtime-config.js';
 
 export class AuthManager {
     constructor() {
@@ -186,7 +187,7 @@ export class AuthManager {
             const customDbBtn = document.getElementById('custom-db-btn');
             if (customDbBtn) {
                 const fbFromEnv = !!window.__FIREBASE_CONFIG__;
-                const pbFromEnv = !!window.__POCKETBASE_URL__;
+                const pbFromEnv = isPocketBaseConfiguredByEnv();
                 if (fbFromEnv && pbFromEnv) {
                     const settingItem = customDbBtn.closest('.setting-item');
                     if (settingItem) settingItem.style.display = 'none';

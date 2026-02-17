@@ -4,9 +4,10 @@ import { db } from '../db.js';
 import { authManager } from './auth.js';
 import { settingsSyncManager } from './settings-sync.js';
 import { resetAllLocalSettings } from '../storage.js';
+import { appConfig } from '../runtime-config.js';
 
 const PUBLIC_COLLECTION = 'public_playlists';
-const DEFAULT_POCKETBASE_URL = 'https://monodb.samidy.com';
+const DEFAULT_POCKETBASE_URL = appConfig.pocketBaseUrl;
 const POCKETBASE_URL = localStorage.getItem('monochrome-pocketbase-url') || DEFAULT_POCKETBASE_URL;
 
 console.log('[PocketBase] Using URL:', POCKETBASE_URL);

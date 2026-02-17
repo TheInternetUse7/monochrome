@@ -32,7 +32,12 @@ export default function authGatePlugin() {
         configurePreviewServer(server) {
             const AUTH_ENABLED = (env.AUTH_ENABLED ?? 'false') !== 'false';
             const FIREBASE_CONFIG = env.FIREBASE_CONFIG;
-            const POCKETBASE_URL = env.POCKETBASE_URL;
+            const POCKETBASE_URL = env.POCKETBASE_URL || env.VITE_POCKETBASE_URL;
+            const SITE_ORIGIN = env.SITE_ORIGIN || env.VITE_SITE_ORIGIN;
+            const INSTANCES_URL = env.INSTANCES_URL || env.VITE_INSTANCES_URL;
+            const DEFAULT_API_INSTANCES = env.DEFAULT_API_INSTANCES || env.VITE_DEFAULT_API_INSTANCES;
+            const DEFAULT_STREAMING_INSTANCES =
+                env.DEFAULT_STREAMING_INSTANCES || env.VITE_DEFAULT_STREAMING_INSTANCES;
             const AUTH_GOOGLE_ENABLED = env.AUTH_GOOGLE_ENABLED;
             const AUTH_EMAIL_ENABLED = env.AUTH_EMAIL_ENABLED;
 
@@ -66,6 +71,12 @@ export default function authGatePlugin() {
             }
             if (parsedFirebaseConfig) flags.push(`window.__FIREBASE_CONFIG__=${JSON.stringify(parsedFirebaseConfig)}`);
             if (POCKETBASE_URL) flags.push(`window.__POCKETBASE_URL__=${JSON.stringify(POCKETBASE_URL)}`);
+            if (SITE_ORIGIN) flags.push(`window.__SITE_ORIGIN__=${JSON.stringify(SITE_ORIGIN)}`);
+            if (INSTANCES_URL) flags.push(`window.__INSTANCES_URL__=${JSON.stringify(INSTANCES_URL)}`);
+            if (DEFAULT_API_INSTANCES)
+                flags.push(`window.__DEFAULT_API_INSTANCES__=${JSON.stringify(DEFAULT_API_INSTANCES)}`);
+            if (DEFAULT_STREAMING_INSTANCES)
+                flags.push(`window.__DEFAULT_STREAMING_INSTANCES__=${JSON.stringify(DEFAULT_STREAMING_INSTANCES)}`);
             const configScript = flags.length > 0 ? `<script>${flags.join(';')};</script>` : null;
 
             // --- Pre-build injected HTML pages ---

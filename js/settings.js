@@ -42,6 +42,7 @@ import { db } from './db.js';
 import { authManager } from './accounts/auth.js';
 import { syncManager } from './accounts/pocketbase.js';
 import { saveFirebaseConfig, clearFirebaseConfig } from './accounts/config.js';
+import { isPocketBaseConfiguredByEnv } from './runtime-config.js';
 
 let settingsPlayer = null;
 let settingsUI = null;
@@ -2352,7 +2353,7 @@ export function initializeSettings(scrobbler, player, api, ui) {
 
     if (customDbBtn && customDbModal) {
         const fbFromEnv = !!window.__FIREBASE_CONFIG__;
-        const pbFromEnv = !!window.__POCKETBASE_URL__;
+        const pbFromEnv = isPocketBaseConfiguredByEnv();
 
         // Hide entire setting if both are server-configured
         if (fbFromEnv && pbFromEnv) {

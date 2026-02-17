@@ -1,7 +1,40 @@
 //storage.js
+import { appConfig, resolveDefaultInstances } from './runtime-config.js';
+
+const BUILTIN_API_INSTANCES = [
+    'https://eu-central.monochrome.tf',
+    'https://us-west.monochrome.tf',
+    'https://arran.monochrome.tf',
+    'https://api.monochrome.tf',
+    'https://triton.squid.wtf',
+    'https://wolf.qqdl.site',
+    'https://tidal-api.binimum.org',
+    'https://monochrome-api.samidy.com',
+    'https://hifi-one.spotisaver.net',
+    'https://hifi-two.spotisaver.net',
+    'https://maus.qqdl.site',
+    'https://tidal.kinoplus.online',
+    'https://hund.qqdl.site',
+    'https://vogel.qqdl.site',
+];
+
+const BUILTIN_STREAMING_INSTANCES = [
+    'https://arran.monochrome.tf',
+    'https://triton.squid.wtf',
+    'https://wolf.qqdl.site',
+    'https://maus.qqdl.site',
+    'https://vogel.qqdl.site',
+    'https://katze.qqdl.site',
+    'https://hund.qqdl.site',
+    'https://tidal.kinoplus.online',
+    'https://tidal-api.binimum.org',
+    'https://hifi-one.spotisaver.net',
+    'https://hifi-two.spotisaver.net',
+];
+
 export const apiSettings = {
     STORAGE_KEY: 'monochrome-api-instances-v6',
-    INSTANCES_URL: 'instances.json',
+    INSTANCES_URL: appConfig.instancesUrl,
     defaultInstances: { api: [], streaming: [] },
     instancesLoaded: false,
 
@@ -44,43 +77,13 @@ export const apiSettings = {
                 }
             }
 
-            this.defaultInstances = groupedInstances;
+            this.defaultInstances = resolveDefaultInstances(groupedInstances.api, groupedInstances.streaming);
             this.instancesLoaded = true;
 
-            return groupedInstances;
+            return this.defaultInstances;
         } catch (error) {
             console.error('Failed to load instances from GitHub:', error);
-            this.defaultInstances = {
-                api: [
-                    'https://eu-central.monochrome.tf',
-                    'https://us-west.monochrome.tf',
-                    'https://arran.monochrome.tf',
-                    'https://api.monochrome.tf',
-                    'https://triton.squid.wtf',
-                    'https://wolf.qqdl.site',
-                    'https://tidal-api.binimum.org',
-                    'https://monochrome-api.samidy.com',
-                    'https://hifi-one.spotisaver.net',
-                    'https://hifi-two.spotisaver.net',
-                    'https://maus.qqdl.site',
-                    'https://tidal.kinoplus.online',
-                    'https://hund.qqdl.site',
-                    'https://vogel.qqdl.site',
-                ],
-                streaming: [
-                    'https://arran.monochrome.tf',
-                    'https://triton.squid.wtf',
-                    'https://wolf.qqdl.site',
-                    'https://maus.qqdl.site',
-                    'https://vogel.qqdl.site',
-                    'https://katze.qqdl.site',
-                    'https://hund.qqdl.site',
-                    'https://tidal.kinoplus.online',
-                    'https://tidal-api.binimum.org',
-                    'https://hifi-one.spotisaver.net',
-                    'https://hifi-two.spotisaver.net',
-                ],
-            };
+            this.defaultInstances = resolveDefaultInstances(BUILTIN_API_INSTANCES, BUILTIN_STREAMING_INSTANCES);
             this.instancesLoaded = true;
             return this.defaultInstances;
         }
