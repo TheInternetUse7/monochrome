@@ -2988,8 +2988,7 @@ function refreshTrackMetadataUI() {
 }
 
 function updateAudioUI() {
-    const eqToggle =
-        document.getElementById('equalizer-enabled-toggle') || document.getElementById('eq-toggle');
+    const eqToggle = document.getElementById('equalizer-enabled-toggle') || document.getElementById('eq-toggle');
     if (eqToggle) {
         eqToggle.checked = equalizerSettings.isEnabled();
     }
@@ -3079,7 +3078,7 @@ function updateInterfaceUI() {
 
     const queueCloseOnNavigationToggle = document.getElementById('queue-close-on-navigation-toggle');
     if (queueCloseOnNavigationToggle) {
-        queueCloseOnNavigationToggle.checked = queueBehaviorSettings.shouldCloseOnNavigation();
+        queueCloseOnNavigationToggle.checked = modalSettings.shouldCloseOnNavigation();
     }
 
     const waveformToggle = document.getElementById('waveform-toggle');

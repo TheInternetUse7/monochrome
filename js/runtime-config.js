@@ -53,11 +53,9 @@ const configuredStreamingInstances = toUrlList(
 );
 
 export const appConfig = {
-    siteOrigin:
-        getFirstNonEmptyString(getWindowValue('__SITE_ORIGIN__'), env.VITE_SITE_ORIGIN) || DEFAULT_SITE_ORIGIN,
+    siteOrigin: getFirstNonEmptyString(getWindowValue('__SITE_ORIGIN__'), env.VITE_SITE_ORIGIN) || DEFAULT_SITE_ORIGIN,
     pocketBaseUrl:
-        getFirstNonEmptyString(getWindowValue('__POCKETBASE_URL__'), env.VITE_POCKETBASE_URL) ||
-        DEFAULT_POCKETBASE_URL,
+        getFirstNonEmptyString(getWindowValue('__POCKETBASE_URL__'), env.VITE_POCKETBASE_URL) || DEFAULT_POCKETBASE_URL,
     instancesUrl:
         getFirstNonEmptyString(getWindowValue('__INSTANCES_URL__'), env.VITE_INSTANCES_URL) || DEFAULT_INSTANCES_URL,
     defaultApiInstances: configuredApiInstances,

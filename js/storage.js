@@ -2347,6 +2347,19 @@ export const modalSettings = {
     },
 };
 
+// Compatibility alias for cloud sync and legacy references.
+export const queueBehaviorSettings = {
+    STORAGE_KEY: modalSettings.STORAGE_KEY,
+
+    shouldCloseOnNavigation() {
+        return modalSettings.shouldCloseOnNavigation();
+    },
+
+    setCloseOnNavigation(enabled) {
+        modalSettings.setCloseOnNavigation(enabled);
+    },
+};
+
 export const contentBlockingSettings = {
     BLOCKED_ARTISTS_KEY: 'blocked-artists',
     BLOCKED_TRACKS_KEY: 'blocked-tracks',
