@@ -1,151 +1,245 @@
-// functions/upload.js
-// Handles cover image uploads via imgur.gg API
-
 const API_BASE = 'https://temp.imgur.gg/api/upload';
+const COMPLETE_URL = 'https://temp.imgur.gg/api/upload/complete';
+const PING_URL = 'https://temp.imgur.gg/api/ping';
 
 export async function onRequest(context) {
     const { request } = context;
 
-    // Handle CORS preflight
     if (request.method === 'OPTIONS') {
-        return new Response(null, {
-            status: 204,
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'POST',
-                'Access-Control-Allow-Headers': 'Content-Type',
-            },
-        });
+        return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
     if (request.method !== 'POST') {
-        return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-            status: 405,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-            },
-        });
+        return jsonError('Method not allowed', 405);
     }
 
     try {
-        // Parse the multipart form data
-        const formData = await request.formData();
-        const file = formData.get('file');
+        const contentType = request.headers.get('content-type') || '';
+        let file;
+        let fileName;
+        let fileType;
 
-        if (!file) {
-            return new Response(JSON.stringify({ error: 'No file provided' }), {
-                status: 400,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                },
-            });
+        /* ========================= */
+        /*        GET FILE           */
+        /* ========================= */
+
+        if (contentType.includes('application/json')) {
+            const body = await request.json();
+            if (!body.fileUrl) return jsonError('No fileUrl provided', 400);
+
+            const res = await fetch(body.fileUrl);
+            if (!res.ok) throw new Error('Failed to fetch remote file');
+
+            file = await res.arrayBuffer();
+            fileName = body.fileName || body.fileUrl.split('/').pop();
+            fileType = res.headers.get('content-type') || 'application/octet-stream';
+        } else {
+            const form = await request.formData();
+            const uploaded = form.get('file');
+            if (!uploaded) return jsonError('No file provided', 400);
+
+            if (uploaded.size > 100 * 1024 * 1024) {
+                return jsonError('File exceeds 100MB', 400);
+            }
+
+            file = await uploaded.arrayBuffer();
+            fileName = uploaded.name;
+            fileType = uploaded.type || 'application/octet-stream';
         }
 
-        // Validate file type
-        if (!file.type.startsWith('image/')) {
-            return new Response(JSON.stringify({ error: 'File must be an image' }), {
-                status: 400,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                },
-            });
-        }
+        /* ========================= */
+        /*        GET SESSION        */
+        /* ========================= */
 
-        // Validate file size (max 10MB)
-        const maxSize = 10 * 1024 * 1024; // 10MB
-        if (file.size > maxSize) {
-            return new Response(JSON.stringify({ error: 'File size exceeds 10MB limit' }), {
-                status: 400,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                },
-            });
-        }
+        const ping = await fetch(PING_URL, {
+            method: 'GET',
+            headers: userAgentHeaders(),
+        });
 
-        // Get file bytes
-        const fileBytes = await file.arrayBuffer();
+        const setCookie = ping.headers.get('set-cookie') || '';
+        const sessionCookie = setCookie.split(';').find((c) => c.trim().startsWith('_s=')) || '';
 
-        // Step 1: Request upload metadata
-        const metadataPayload = {
-            files: [
-                {
-                    fileName: file.name,
-                    fileType: file.type,
-                    fileSize: file.size,
-                },
-            ],
-        };
+        /* ========================= */
+        /*       GET METADATA        */
+        /* ========================= */
 
-        const metadataResponse = await fetch(API_BASE, {
+        const metadataResp = await fetch(API_BASE, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                Cookie: sessionCookie,
+                ...userAgentHeaders(),
             },
-            body: JSON.stringify(metadataPayload),
+            body: JSON.stringify({
+                files: [
+                    {
+                        fileName,
+                        fileType,
+                        fileSize: file.byteLength,
+                    },
+                ],
+            }),
         });
 
-        if (!metadataResponse.ok) {
-            throw new Error(`Metadata request failed: ${metadataResponse.status}`);
+        const metadataText = await metadataResp.text();
+
+        if (!metadataResp.ok) {
+            throw new Error(`Metadata failed: ${metadataText}`);
         }
 
-        const metadata = await metadataResponse.json();
+        const metadata = JSON.parse(metadataText);
+        const fileInfo = metadata.files?.[0];
 
-        if (!metadata.success || !metadata.files || !metadata.files[0]) {
-            throw new Error('Failed to get upload URL from imgur.gg');
+        if (!fileInfo || !fileInfo.success) {
+            throw new Error('Invalid metadata response');
         }
 
-        const fileInfo = metadata.files[0];
-        const uploadUrl = fileInfo.uploadUrl;
+        /* ========================= */
+        /*      HANDLE UPLOAD        */
+        /* ========================= */
 
-        // Step 2: Upload the file
-        const uploadResponse = await fetch(uploadUrl, {
-            method: 'PUT',
-            body: fileBytes,
-            headers: {
-                'Content-Type': file.type,
-            },
-        });
+        let result;
 
-        if (!uploadResponse.ok) {
-            throw new Error(`File upload failed: ${uploadResponse.status}`);
+        if (fileInfo.isMultipart) {
+            result = await handleMultipart(fileInfo, file, sessionCookie);
+        } else {
+            result = await handleSingle(fileInfo.uploadUrl, file, fileType);
         }
 
-        // Step 3: Return the public URL
         const publicUrl = `https://i.imgur.gg/${fileInfo.fileId}-${fileInfo.fileName}`;
 
-        return new Response(
-            JSON.stringify({
-                success: true,
-                url: publicUrl,
-                fileId: fileInfo.fileId,
-                fileName: fileInfo.fileName,
-            }),
-            {
-                status: 200,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                },
-            }
-        );
-    } catch (error) {
-        console.error('Upload error:', error);
-        return new Response(
-            JSON.stringify({
-                error: 'Upload failed',
-                message: error.message,
-            }),
-            {
-                status: 500,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                },
-            }
-        );
+        return jsonResponse({
+            success: true,
+            url: publicUrl,
+            fileId: fileInfo.fileId,
+            fileName: fileInfo.fileName,
+        });
+    } catch (err) {
+        return jsonError(err.message, 500);
     }
+}
+
+/* ===================================================== */
+/* ================= SINGLE UPLOAD ===================== */
+/* ===================================================== */
+
+async function handleSingle(uploadUrl, fileBuffer, fileType) {
+    if (!uploadUrl) throw new Error('Missing uploadUrl');
+
+    const res = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: fileBuffer,
+        headers: {
+            'Content-Type': fileType,
+        },
+    });
+
+    if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Single upload failed: ${txt}`);
+    }
+
+    return true;
+}
+
+/* ===================================================== */
+/* ================= MULTIPART UPLOAD =================== */
+/* ===================================================== */
+
+async function handleMultipart(fileInfo, fileBuffer, sessionCookie) {
+    const { partUrls, partSize, uploadId, fileId } = fileInfo;
+
+    if (!partUrls || !uploadId) {
+        throw new Error('Invalid multipart metadata');
+    }
+
+    const parts = [];
+
+    for (let i = 0; i < partUrls.length; i++) {
+        const start = i * partSize;
+        const end = start + partSize;
+        const chunk = fileBuffer.slice(start, end);
+
+        const uploadRes = await fetch(partUrls[i].url, {
+            method: 'PUT',
+            body: chunk,
+        });
+
+        if (!uploadRes.ok) {
+            const txt = await uploadRes.text();
+            throw new Error(`Multipart part ${i + 1} failed: ${txt}`);
+        }
+
+        let etag = uploadRes.headers.get('etag') || '';
+        etag = etag.replace(/"/g, '');
+
+        parts.push({
+            PartNumber: i + 1,
+            ETag: `"${etag}"`,
+        });
+    }
+
+    /* ========================= */
+    /*      FINALIZE UPLOAD      */
+    /* ========================= */
+
+    const completeResp = await fetch(COMPLETE_URL, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            Cookie: sessionCookie,
+            ...userAgentHeaders(),
+        },
+        body: JSON.stringify({
+            fileId,
+            uploadId,
+            parts,
+        }),
+    });
+
+    const completeText = await completeResp.text();
+
+    if (!completeResp.ok) {
+        throw new Error(`Multipart complete failed: ${completeText}`);
+    }
+
+    const completeData = JSON.parse(completeText);
+
+    if (!completeData.success) {
+        throw new Error('Multipart finalize returned failure');
+    }
+
+    return completeData;
+}
+
+/* ===================================================== */
+/* ================= UTILITIES ========================= */
+/* ===================================================== */
+
+function jsonResponse(obj, status = 200) {
+    return new Response(JSON.stringify(obj), {
+        status,
+        headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders(),
+        },
+    });
+}
+
+function jsonError(message, status) {
+    return jsonResponse({ success: false, error: message }, status);
+}
+
+function corsHeaders() {
+    return {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+    };
+}
+
+function userAgentHeaders() {
+    return {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0',
+    };
 }

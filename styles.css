@@ -1,64 +1,40 @@
-/* stylelint-disable no-descending-specificity */
-
-/* ==========================================================================
-   DESIGN SYSTEM - Monochrome
-   A comprehensive design language for consistent UI/UX
-   ========================================================================== */
-
 :root {
     color-scheme: light dark;
 
-    /* -------------------------------------------------------------------------
-       TYPOGRAPHY SCALE
-       Use these variables for ALL font sizes
-       ------------------------------------------------------------------------- */
     --font-family: 'Inter', -apple-system, blinkmacsystemfont, 'Segoe UI', roboto, sans-serif;
     --font-size-scale: 100%;
-
-    /* Typography Scale - Base 16px (1rem) */
-    --text-xs: 0.75rem; /* 12px - Captions, badges, timestamps */
-    --text-sm: 0.875rem; /* 14px - Secondary text, labels */
-    --text-base: 1rem; /* 16px - Body text (default) */
-    --text-md: 1.125rem; /* 18px - Lead paragraphs */
-    --text-lg: 1.25rem; /* 20px - Small headings */
-    --text-xl: 1.5rem; /* 24px - H4, card titles */
-    --text-2xl: 1.875rem; /* 30px - H3 */
-    --text-3xl: 2.25rem; /* 36px - H2 */
-    --text-4xl: 3rem; /* 48px - H1 */
-    --text-5xl: 3.75rem; /* 60px - Display text */
-
-    /* Font Weights */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-md: 1.125rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.5rem;
+    --text-2xl: 1.875rem;
+    --text-3xl: 2.25rem;
+    --text-4xl: 3rem;
+    --text-5xl: 3.75rem;
     --font-normal: 400;
     --font-medium: 500;
     --font-semibold: 600;
     --font-bold: 700;
-
-    /* Line Heights */
     --leading-none: 1;
     --leading-tight: 1.25;
     --leading-snug: 1.375;
     --leading-normal: 1.5;
     --leading-relaxed: 1.625;
-
-    /* -------------------------------------------------------------------------
-       SPACING SCALE
-       Use these variables for ALL spacing (margin, padding, gap)
-       ------------------------------------------------------------------------- */
     --space-0: 0;
-    --space-1: 0.25rem; /* 4px */
-    --space-2: 0.5rem; /* 8px */
-    --space-3: 0.75rem; /* 12px */
-    --space-4: 1rem; /* 16px */
-    --space-5: 1.25rem; /* 20px */
-    --space-6: 1.5rem; /* 24px */
-    --space-8: 2rem; /* 32px */
-    --space-10: 2.5rem; /* 40px */
-    --space-12: 3rem; /* 48px */
-    --space-16: 4rem; /* 64px */
-    --space-20: 5rem; /* 80px */
-    --space-24: 6rem; /* 96px */
-
-    /* Legacy spacing aliases (deprecated, use --space-* instead) */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+    --space-16: 4rem;
+    --space-20: 5rem;
+    --space-24: 6rem;
     --spacing-xs: var(--space-1);
     --spacing-sm: var(--space-2);
     --spacing-md: var(--space-4);
@@ -66,34 +42,19 @@
     --spacing-xl: var(--space-8);
     --spacing-2xl: var(--space-12);
     --spacing-3xl: var(--space-16);
-
-    /* -------------------------------------------------------------------------
-       BORDER RADIUS SCALE
-       Use these variables for ALL border-radius values
-       ------------------------------------------------------------------------- */
     --radius-none: 0;
-    --radius-xs: 2px; /* Small badges, tags */
-    --radius-sm: 4px; /* Inputs, small buttons */
-    --radius-md: 8px; /* Cards, panels */
-    --radius-lg: 12px; /* Large cards, modals */
-    --radius-xl: 16px; /* Hero elements */
-    --radius-2xl: 24px; /* Extra large elements */
-    --radius-full: 9999px; /* Circles, pills, avatars */
-
-    /* Legacy radius aliases (deprecated, use --radius-md for default) */
+    --radius-xs: 2px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-2xl: 24px;
+    --radius-full: 9999px;
     --radius: var(--radius-md);
-
-    /* -------------------------------------------------------------------------
-       LAYOUT DIMENSIONS
-       ------------------------------------------------------------------------- */
     --player-bar-height-desktop: 90px;
     --player-bar-height-mobile: 130px;
     --sidebar-width: 240px;
     --sidebar-collapsed-width: 70px;
-
-    /* -------------------------------------------------------------------------
-       TRANSITIONS & ANIMATIONS
-       ------------------------------------------------------------------------- */
     --duration-instant: 0ms;
     --duration-fast: 150ms;
     --duration-normal: 300ms;
@@ -105,16 +66,10 @@
     --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
     --ease-elastic: cubic-bezier(0.68, -0.55, 0.265, 1.55);
     --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
-
-    /* Legacy transition aliases */
     --transition-fast: var(--duration-fast) var(--ease-in-out);
     --transition-normal: var(--duration-normal) var(--ease-in-out);
     --transition-slow: var(--duration-slow) var(--ease-in-out);
     --transition: var(--transition-normal);
-
-    /* -------------------------------------------------------------------------
-       SHADOWS
-       ------------------------------------------------------------------------- */
     --shadow-none: none;
     --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
@@ -124,10 +79,6 @@
     --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
     --shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
     --shadow-glow: 0 0 20px rgb(var(--highlight-rgb) / 0.5);
-
-    /* -------------------------------------------------------------------------
-       Z-INDEX SCALE
-       ------------------------------------------------------------------------- */
     --z-hide: -1;
     --z-base: 0;
     --z-docked: 10;
@@ -139,10 +90,6 @@
     --z-popover: 1500;
     --z-tooltip: 1600;
     --z-toast: 1700;
-
-    /* -------------------------------------------------------------------------
-       COMPONENT TOKENS
-       ------------------------------------------------------------------------- */
 
     /* Buttons */
     --btn-height-sm: 32px;
@@ -172,10 +119,6 @@
     /* Covers */
     --cover-filter: blur(50px) brightness(0.4);
     --cover-radius: var(--radius-md);
-
-    /* -------------------------------------------------------------------------
-       SEMANTIC COLORS (will be overridden by themes)
-       ------------------------------------------------------------------------- */
     --color-danger: #ef4444;
     --color-danger-hover: #dc2626;
     --color-success: #10b981;
@@ -470,11 +413,6 @@ kbd {
     font-family: inherit;
     box-shadow: var(--shadow-sm);
 }
-
-/* ==========================================================================
-   UTILITY CLASSES
-   Consistent utility classes for common patterns
-   ========================================================================== */
 
 /* Typography utilities */
 .text-xs {
@@ -971,10 +909,6 @@ kbd {
 .transition-slow {
     transition: all var(--duration-slow) var(--ease-in-out);
 }
-
-/* ==========================================================================
-   APP LAYOUT
-   ========================================================================== */
 
 .app-container {
     display: grid;
@@ -1628,6 +1562,17 @@ input[type='search']::-webkit-search-cancel-button {
     margin-bottom: var(--spacing-lg);
 }
 
+.section-header-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+}
+
+.section-header-row .section-title {
+    margin-bottom: 0;
+}
+
 .search-tabs {
     display: flex;
     gap: var(--spacing-xs);
@@ -1988,7 +1933,7 @@ input[type='search']::-webkit-search-cancel-button {
 }
 
 #playlist-detail-recommended .track-item {
-    grid-template-columns: 40px 1fr 32px 64px;
+    grid-template-columns: 40px 1fr 32px auto;
 }
 
 @media (max-width: 1100px) {
@@ -2080,7 +2025,7 @@ input[type='search']::-webkit-search-cancel-button {
 /* Track Item Standardization */
 .track-item {
     display: grid;
-    grid-template-columns: 40px 1fr 60px 40px;
+    grid-template-columns: 40px 1fr 60px auto;
     gap: var(--spacing-md);
     padding: var(--spacing-sm) var(--spacing-md);
     border-radius: var(--radius-sm);
@@ -2164,7 +2109,6 @@ input[type='search']::-webkit-search-cancel-button {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: flex;
     align-items: center;
 }
 
@@ -2239,12 +2183,6 @@ input[type='search']::-webkit-search-cancel-button {
 .track-action-btn:hover {
     background-color: rgb(var(--highlight-rgb), 0.2);
     color: var(--foreground);
-}
-
-/* Editable Playlist Track Items (with remove button) */
-.is-editable .track-list-header,
-.is-editable .track-item {
-    grid-template-columns: 40px 1fr 80px 90px;
 }
 
 .detail-header {
@@ -2359,6 +2297,89 @@ input[type='search']::-webkit-search-cancel-button {
 
 .detail-header-info .meta a:hover {
     color: var(--highlight);
+}
+
+/* Artist Biography Styles */
+.artist-bio {
+    color: var(--muted-foreground);
+    margin-top: 1rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    max-width: 600px;
+    display: block;
+    overflow: hidden;
+    transition: color var(--transition);
+}
+
+.artist-bio:hover {
+    color: var(--foreground);
+}
+
+.artist-socials {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.social-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-full);
+    background-color: var(--secondary);
+    color: var(--muted-foreground);
+    transition: all var(--transition-fast);
+}
+
+.social-link:hover {
+    background-color: var(--highlight);
+    color: var(--background);
+    transform: translateY(-2px);
+}
+
+.social-link svg {
+    width: 18px;
+    height: 18px;
+}
+
+.bio-link {
+    color: var(--highlight) !important;
+    text-decoration: underline !important;
+    cursor: pointer !important;
+    font-weight: 500 !important;
+    pointer-events: auto !important;
+}
+
+.bio-link:hover {
+    color: var(--primary) !important;
+    text-decoration: none !important;
+}
+
+.bio-read-more {
+    display: block;
+    color: var(--highlight);
+    text-decoration: underline;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.95rem;
+    margin-top: 0.5rem;
+}
+
+.bio-read-more:hover {
+    color: var(--primary);
+}
+
+.bio-source {
+    display: block;
+    margin-top: 1.5rem;
+    font-size: 0.9rem;
+    opacity: 0.6;
+    font-style: italic;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
 }
 
 .detail-header-actions {
@@ -3476,10 +3497,86 @@ input:checked + .slider::before {
     padding: 1rem;
 }
 
-#close-fullscreen-cover-btn {
+/* UI Toggle Button for Visualizer Mode - Rightmost position */
+#toggle-ui-btn {
     position: absolute;
     top: 1rem;
     right: 1rem;
+    background-color: var(--background);
+    border: none;
+    color: var(--foreground);
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+        opacity 0.3s ease,
+        transform 0.2s ease,
+        right 0.3s ease;
+    z-index: 10;
+    opacity: 0.5;
+    pointer-events: auto;
+}
+
+#toggle-ui-btn:hover {
+    opacity: 0.8;
+    transform: scale(1.05);
+}
+
+#toggle-ui-btn.active {
+    color: var(--primary);
+    opacity: 0.8;
+}
+
+/* When UI is hidden, toggle button is hidden by default */
+#fullscreen-cover-overlay.ui-hidden #toggle-ui-btn {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* When UI is hidden and mouse is near, show the toggle button */
+#fullscreen-cover-overlay.ui-hidden #toggle-ui-btn.visible {
+    opacity: 0.5;
+    pointer-events: auto;
+}
+
+/* Lyrics Toggle - Middle position */
+.fullscreen-lyrics-toggle {
+    position: absolute;
+    top: 1rem;
+    right: 4.5rem;
+    background: rgb(0, 0, 0, 0.5);
+    border: none;
+    color: white;
+    padding: 0.75rem;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    z-index: 1001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+        all 0.2s ease,
+        right 0.3s ease;
+}
+
+.fullscreen-lyrics-toggle:hover {
+    background: rgb(0, 0, 0, 0.7);
+    transform: scale(1.1);
+}
+
+.fullscreen-lyrics-toggle.active {
+    background: var(--primary);
+}
+
+/* Close Button - Leftmost position */
+#close-fullscreen-cover-btn {
+    position: absolute;
+    top: 1rem;
+    right: 8rem;
     background-color: var(--background);
     border: none;
     color: var(--foreground);
@@ -3502,6 +3599,36 @@ input:checked + .slider::before {
     opacity: 0.8;
 }
 
+/* UI Hidden State for Visualizer Mode */
+#fullscreen-cover-overlay.ui-hidden .fullscreen-main-view,
+#fullscreen-cover-overlay.ui-hidden .fullscreen-controls,
+#fullscreen-cover-overlay.ui-hidden #fullscreen-next-track {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+}
+
+/* When UI is hidden, only toggle button stays visible at right edge */
+#fullscreen-cover-overlay.ui-hidden #toggle-ui-btn {
+    right: 1rem;
+    opacity: 0.5;
+    pointer-events: auto;
+}
+
+#fullscreen-cover-overlay.ui-hidden .fullscreen-lyrics-toggle,
+#fullscreen-cover-overlay.ui-hidden #close-fullscreen-cover-btn {
+    opacity: 0;
+    pointer-events: none;
+}
+
+#fullscreen-cover-overlay:not(.ui-hidden) .fullscreen-main-view,
+#fullscreen-cover-overlay:not(.ui-hidden) .fullscreen-controls,
+#fullscreen-cover-overlay:not(.ui-hidden) #fullscreen-next-track {
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.5s ease;
+}
+
 #fullscreen-cover-image {
     max-width: 55vw;
     max-height: 45vh;
@@ -3510,6 +3637,14 @@ input:checked + .slider::before {
     object-fit: contain;
     margin-bottom: 1rem;
     z-index: 1;
+}
+
+/* Enhanced drop shadow for album cover in visualizer mode */
+#fullscreen-cover-overlay.visualizer-active #fullscreen-cover-image {
+    box-shadow:
+        0 25px 60px rgb(0, 0, 0, 0.6),
+        0 10px 30px rgb(0, 0, 0, 0.4),
+        0 0 100px rgb(0, 0, 0, 0.3);
 }
 
 .fullscreen-track-info {
@@ -4251,6 +4386,7 @@ input:checked + .slider::before {
     gap: 1rem;
     margin: 1.5rem 0;
     flex-wrap: wrap;
+    justify-content: center;
 }
 
 .github-link {
@@ -4520,7 +4656,7 @@ input:checked + .slider::before {
 
 #playlist-detail-tracklist .track-list-header {
     display: grid;
-    grid-template-columns: 40px 1fr 80px 48px;
+    grid-template-columns: 40px 1fr 80px auto;
     align-items: center;
     gap: var(--spacing-md);
     padding: var(--spacing-sm);
@@ -4819,6 +4955,16 @@ input:checked + .slider::before {
     text-decoration: underline;
 }
 
+.track-item .artist .artist-link {
+    cursor: pointer;
+    transition: color var(--transition);
+}
+
+.track-item .artist .artist-link:hover {
+    color: var(--highlight);
+    text-decoration: underline;
+}
+
 /* Updated Volume Controls Layout */
 
 .player-actions-row {
@@ -4935,34 +5081,6 @@ img[src=''] {
         margin-right 0.3s ease;
 }
 
-.fullscreen-lyrics-toggle {
-    position: absolute;
-    top: 1rem;
-    right: 4.5rem;
-    background: rgb(0, 0, 0, 0.5);
-    border: none;
-    color: white;
-    padding: 0.75rem;
-    border-radius: var(--radius-full);
-    cursor: pointer;
-    z-index: 1001;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-        all 0.2s ease,
-        right 0.3s ease;
-}
-
-.fullscreen-lyrics-toggle:hover {
-    background: rgb(0, 0, 0, 0.7);
-    transform: scale(1.1);
-}
-
-.fullscreen-lyrics-toggle.active {
-    background: var(--primary);
-}
-
 /* Modals */
 .modal {
     position: fixed;
@@ -5003,6 +5121,10 @@ img[src=''] {
 
 .modal-content.wide {
     max-width: 600px;
+}
+
+.modal-content.extra-wide {
+    max-width: 1000px;
 }
 
 .modal-content.medium {
@@ -5463,6 +5585,18 @@ img[src=''] {
 }
 
 @media (max-width: 768px) {
+    html,
+    body {
+        height: auto;
+        min-height: 100%;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    body {
+        position: static;
+    }
+
     .player-controls .progress-container {
         order: -1;
         max-width: none;
@@ -5498,13 +5632,15 @@ img[src=''] {
             'header' auto
             'main' 1fr
             'player' auto / 1fr;
-        height: 100vh;
-        height: 100dvh;
+        height: auto;
+        min-height: 100vh;
+        min-height: 100dvh;
     }
 
     .main-content {
         padding: var(--spacing-md);
         grid-area: main;
+        overflow-y: visible;
     }
 
     .main-header {
@@ -6147,6 +6283,16 @@ img[src=''] {
 }
 
 @media (hover: none) and (pointer: coarse) {
+    /* Allow play button to float outside square cover on mobile */
+    .card-image-wrapper {
+        overflow: visible;
+    }
+
+    .card:not(.artist) .card-image-wrapper .card-image,
+    .card:not(.artist) .card-image-wrapper .card-collage {
+        clip-path: inset(0 round var(--radius));
+    }
+
     .main-content {
         padding: var(--spacing-sm);
         grid-area: main;
@@ -6571,10 +6717,6 @@ body:has(#side-panel.active) #close-fullscreen-cover-btn {
     }
 }
 
-/* =========================================
-   Global Design System Standardization
-   ========================================= */
-
 /* Scrollbars */
 ::-webkit-scrollbar {
     width: 10px;
@@ -6634,10 +6776,6 @@ textarea:focus {
 .nav-item a:active {
     transform: scale(0.97);
 }
-
-/* =========================================
-   16-Band Equalizer
-   ========================================= */
 
 .equalizer-container {
     margin-top: var(--spacing-md);
@@ -7541,4 +7679,101 @@ textarea:focus {
     width: 100%;
     text-align: left;
     justify-content: flex-start;
+}
+
+.theme-card-preview {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+.theme-card-preview-header {
+    height: 30%;
+    border-bottom: 1px solid var(--border);
+}
+
+.theme-card-preview-body {
+    flex: 1;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.theme-card-preview-line {
+    height: 4px;
+    border-radius: 2px;
+    width: 100%;
+    opacity: 0.5;
+}
+
+.theme-editor-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--secondary);
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: var(--radius) var(--radius) 0 0;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.theme-editor-toolbar .color-picker-group {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.theme-editor-toolbar .style-picker-group {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.theme-editor-toolbar select {
+    height: 24px;
+    padding: 0 4px;
+    font-size: 0.75rem;
+    background-color: var(--input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--foreground);
+    cursor: pointer;
+}
+
+.theme-editor-toolbar input[type='color'] {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    background: none;
+}
+
+#theme-upload-css {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    max-width: 100%;
+}
+
+#theme-preview-window {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 300px;
+    height: 400px;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-xl);
+    z-index: 10000;
+    overflow: hidden;
+    resize: both;
+    display: flex;
+    flex-direction: column;
 }

@@ -33,97 +33,161 @@ const BUILTIN_STREAMING_INSTANCES = [
 ];
 
 export const apiSettings = {
-    STORAGE_KEY: 'monochrome-api-instances-v6',
-    INSTANCES_URL: appConfig.instancesUrl,
+    STORAGE_KEY: 'monochrome-api-instances-v9',
+    INSTANCES_URLS: [appConfig.instancesUrl, 'https://tidal-uptime.jiffy-puffs-1j.workers.dev/', 'https://tidal-uptime.props-76styles.workers.dev/'].filter(
+        (url, index, list) => typeof url === 'string' && url.trim() !== '' && list.indexOf(url) === index
+    ),
     defaultInstances: { api: [], streaming: [] },
     instancesLoaded: false,
+    _loadPromise: null,
+
+    normalizeInstances(instances = { api: [], streaming: [] }) {
+        const filterInstances = (list) =>
+            list.filter((instance) => {
+                const url = typeof instance === 'string' ? instance : instance?.url;
+                return typeof url === 'string' && !url.includes('spotisaver.net');
+            });
+
+        const api = Array.isArray(instances.api) ? filterInstances(instances.api) : [];
+        const streaming = Array.isArray(instances.streaming) ? filterInstances(instances.streaming) : [];
+
+        return resolveDefaultInstances(api, streaming.length > 0 ? streaming : api);
+    },
+
+    parseFetchedInstances(data) {
+        if (Array.isArray(data)) {
+            return { api: [...data], streaming: [...data] };
+        }
+
+        const groupedInstances = { api: [], streaming: [] };
+
+        if (data?.api && Array.isArray(data.api)) {
+            groupedInstances.api = [...data.api];
+        } else if (data?.api && typeof data.api === 'object') {
+            for (const config of Object.values(data.api)) {
+                if (config?.cors === false && Array.isArray(config.urls)) {
+                    groupedInstances.api.push(...config.urls);
+                }
+            }
+        }
+
+        if (data?.streaming && Array.isArray(data.streaming)) {
+            groupedInstances.streaming = [...data.streaming];
+        } else if (groupedInstances.api.length > 0) {
+            groupedInstances.streaming = [...groupedInstances.api];
+        }
+
+        return groupedInstances;
+    },
 
     async loadInstancesFromGitHub() {
         if (this.instancesLoaded) {
             return this.defaultInstances;
         }
 
-        try {
-            const response = await fetch(this.INSTANCES_URL);
-            if (!response.ok) throw new Error('Failed to fetch instances');
+        if (this._loadPromise) {
+            return this._loadPromise;
+        }
 
-            const data = await response.json();
+        this._loadPromise = (async () => {
+            try {
+                const cachedData = localStorage.getItem(this.STORAGE_KEY);
+                if (cachedData) {
+                    try {
+                        const parsed = JSON.parse(cachedData);
+                        const cachedInstances = parsed?.data ?? parsed;
+                        const hasInstanceLists =
+                            cachedInstances &&
+                            (Array.isArray(cachedInstances.api) || Array.isArray(cachedInstances.streaming));
 
-            let groupedInstances = { api: [], streaming: [] };
-
-            if (Array.isArray(data)) {
-                // Legacy array format
-                groupedInstances.api = [...data];
-                groupedInstances.streaming = [...data];
-            } else {
-                // New object format or legacy object format
-                if (data.api && Array.isArray(data.api)) {
-                    const isSimpleArray = data.api.length > 0 && typeof data.api[0] === 'string';
-                    if (isSimpleArray) {
-                        groupedInstances.api = [...data.api];
-                    } else {
-                        for (const [_key, config] of Object.entries(data.api)) {
-                            if (config.cors === false && Array.isArray(config.urls)) {
-                                groupedInstances.api.push(...config.urls);
+                        if (hasInstanceLists) {
+                            if (parsed?.timestamp) {
+                                const now = Date.now();
+                                if (now - parsed.timestamp < 15 * 60 * 1000) {
+                                    this.defaultInstances = this.normalizeInstances(cachedInstances);
+                                    this.instancesLoaded = true;
+                                    return this.defaultInstances;
+                                }
+                            } else {
+                                this.defaultInstances = this.normalizeInstances(cachedInstances);
+                                this.instancesLoaded = true;
+                                return this.defaultInstances;
                             }
                         }
+                    } catch (e) {
+                        console.warn('Failed to parse cached instances:', e);
                     }
                 }
 
-                if (data.streaming && Array.isArray(data.streaming)) {
-                    groupedInstances.streaming = [...data.streaming];
-                } else if (groupedInstances.api.length > 0) {
-                    groupedInstances.streaming = [...groupedInstances.api];
+                let data = null;
+                let fetchError = null;
+                const urls = [...this.INSTANCES_URLS].sort(() => Math.random() - 0.5);
+
+                for (const url of urls) {
+                    try {
+                        const response = await fetch(url);
+                        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                        data = await response.json();
+                        break;
+                    } catch (error) {
+                        console.warn(`Failed to fetch from ${url}:`, error);
+                        fetchError = error;
+                    }
                 }
+
+                if (!data) {
+                    console.error('Failed to load instances from all instance APIs:', fetchError);
+                    this.defaultInstances = resolveDefaultInstances(BUILTIN_API_INSTANCES, BUILTIN_STREAMING_INSTANCES);
+                    this.instancesLoaded = true;
+                    return this.defaultInstances;
+                }
+
+                const groupedInstances = this.parseFetchedInstances(data);
+                this.defaultInstances = this.normalizeInstances(groupedInstances);
+                this.instancesLoaded = true;
+
+                try {
+                    localStorage.setItem(
+                        this.STORAGE_KEY,
+                        JSON.stringify({
+                            timestamp: Date.now(),
+                            data: this.defaultInstances,
+                        })
+                    );
+                } catch (e) {
+                    console.warn('Failed to cache instances:', e);
+                }
+
+                return this.defaultInstances;
+            } catch (error) {
+                console.error('Failed to load instances from APIs:', error);
+                this.defaultInstances = resolveDefaultInstances(BUILTIN_API_INSTANCES, BUILTIN_STREAMING_INSTANCES);
+                this.instancesLoaded = true;
+                return this.defaultInstances;
+            } finally {
+                this._loadPromise = null;
             }
+        })();
 
-            this.defaultInstances = resolveDefaultInstances(groupedInstances.api, groupedInstances.streaming);
-            this.instancesLoaded = true;
-
-            return this.defaultInstances;
-        } catch (error) {
-            console.error('Failed to load instances from GitHub:', error);
-            this.defaultInstances = resolveDefaultInstances(BUILTIN_API_INSTANCES, BUILTIN_STREAMING_INSTANCES);
-            this.instancesLoaded = true;
-            return this.defaultInstances;
-        }
+        return this._loadPromise;
     },
 
     async getInstances(type = 'api', _sortBySpeed = false) {
-        let instancesObj;
-
+        let instancesObj = null;
         const stored = localStorage.getItem(this.STORAGE_KEY);
         if (stored) {
-            instancesObj = JSON.parse(stored);
-
-            // love it when local storage doesnt update
-            if (instancesObj?.api?.length === 2) {
-                const hasBinimum = instancesObj.api.some((url) => {
-                    try {
-                        const urlObj = new URL(url);
-                        return urlObj.hostname === 'tidal-api.binimum.org';
-                    } catch {
-                        return false;
-                    }
-                });
-                const hasSamidy = instancesObj.api.some((url) => {
-                    try {
-                        const urlObj = new URL(url);
-                        return urlObj.hostname === 'monochrome-api.samidy.com';
-                    } catch {
-                        return false;
-                    }
-                });
-
-                if (hasBinimum && hasSamidy) {
-                    localStorage.removeItem(this.STORAGE_KEY);
-                    instancesObj = null;
-                }
+            try {
+                const parsed = JSON.parse(stored);
+                instancesObj = parsed?.data ?? parsed;
+            } catch (e) {
+                console.warn('Failed to parse stored instances:', e);
             }
         }
 
         if (!instancesObj) {
             instancesObj = await this.loadInstancesFromGitHub();
+        } else {
+            instancesObj = this.normalizeInstances(instancesObj);
         }
 
         const typeUrls = Array.isArray(instancesObj[type]) ? instancesObj[type] : [];
@@ -159,18 +223,38 @@ export const apiSettings = {
         return this.getInstances('api');
     },
     saveInstances(instances, type) {
-        if (type) {
-            try {
-                const stored = localStorage.getItem(this.STORAGE_KEY);
-                let fullObj = stored ? JSON.parse(stored) : { api: [], streaming: [] };
-                fullObj[type] = instances;
-                localStorage.setItem(this.STORAGE_KEY, JSON.stringify(fullObj));
-            } catch (e) {
-                console.error('Failed to save instances:', e);
-            }
-        } else {
-            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(instances));
+        let parsedData = null;
+        try {
+            const stored = localStorage.getItem(this.STORAGE_KEY);
+            parsedData = stored ? JSON.parse(stored) : null;
+        } catch (e) {
+            console.warn('Failed to parse stored instances for save:', e);
         }
+
+        const baseInstances = parsedData?.data ?? parsedData ?? { api: [], streaming: [] };
+        const fullObj = {
+            api: Array.isArray(baseInstances.api) ? [...baseInstances.api] : [],
+            streaming: Array.isArray(baseInstances.streaming) ? [...baseInstances.streaming] : [],
+        };
+
+        if (type) {
+            fullObj[type] = Array.isArray(instances) ? instances : [];
+        } else {
+            const incoming = instances?.data ?? instances;
+            fullObj.api = Array.isArray(incoming?.api) ? incoming.api : [];
+            fullObj.streaming = Array.isArray(incoming?.streaming) ? incoming.streaming : [];
+        }
+
+        localStorage.setItem(
+            this.STORAGE_KEY,
+            JSON.stringify({
+                timestamp: Date.now(),
+                data: fullObj,
+            })
+        );
+
+        this.defaultInstances = this.normalizeInstances(fullObj);
+        this.instancesLoaded = true;
     },
 };
 export const recentActivityManager = {
@@ -272,6 +356,8 @@ export const themeManager = {
                 this.applyCustomTheme(customTheme);
             }
         }
+
+        window.dispatchEvent(new CustomEvent('theme-changed', { detail: { theme } }));
     },
 
     getCustomTheme() {
@@ -558,6 +644,20 @@ export const downloadQualitySettings = {
     },
 };
 
+export const losslessContainerSettings = {
+    STORAGE_KEY: 'lossless-container',
+    getContainer() {
+        try {
+            return localStorage.getItem(this.STORAGE_KEY) || 'flac';
+        } catch {
+            return 'flac';
+        }
+    },
+    setContainer(container) {
+        localStorage.setItem(this.STORAGE_KEY, container);
+    },
+};
+
 export const coverArtSizeSettings = {
     STORAGE_KEY: 'cover-art-size',
     getSize() {
@@ -678,6 +778,7 @@ export const playlistSettings = {
     NFO_KEY: 'playlist-generate-nfo',
     JSON_KEY: 'playlist-generate-json',
     RELATIVE_PATHS_KEY: 'playlist-relative-paths',
+    SEPARATE_DISCS_KEY: 'playlist-separate-discs-in-zip',
 
     shouldGenerateM3U() {
         try {
@@ -729,6 +830,15 @@ export const playlistSettings = {
         }
     },
 
+    shouldSeparateDiscsInZip() {
+        try {
+            const val = localStorage.getItem(this.SEPARATE_DISCS_KEY);
+            return val === null ? true : val === 'true';
+        } catch {
+            return true;
+        }
+    },
+
     setGenerateM3U(enabled) {
         localStorage.setItem(this.M3U_KEY, enabled ? 'true' : 'false');
     },
@@ -751,6 +861,10 @@ export const playlistSettings = {
 
     setUseRelativePaths(enabled) {
         localStorage.setItem(this.RELATIVE_PATHS_KEY, enabled ? 'true' : 'false');
+    },
+
+    setSeparateDiscsInZip(enabled) {
+        localStorage.setItem(this.SEPARATE_DISCS_KEY, enabled ? 'true' : 'false');
     },
 };
 
@@ -1335,6 +1449,7 @@ export const audioEffectsSettings = {
     SPEED_KEY: 'audio-effects-speed',
     PITCH_KEY: 'audio-effects-pitch',
     PRESERVE_PITCH_KEY: 'audio-effects-preserve-pitch',
+    PITCH_PRESERVE_KEY: 'audio-effects-pitch-preserve',
 
     // Playback speed (0.01 to 100, default 1.0)
     getSpeed() {
@@ -1368,16 +1483,29 @@ export const audioEffectsSettings = {
 
     // Preserve pitch when changing speed (default true)
     getPreservePitch() {
+    isPreservePitchEnabled() {
         try {
-            const val = localStorage.getItem(this.PRESERVE_PITCH_KEY);
-            return val === null ? true : val === 'true';
+            const currentKeyValue = localStorage.getItem(this.PITCH_PRESERVE_KEY);
+            if (currentKeyValue !== null) {
+                return currentKeyValue === 'true';
+            }
+
+            const legacyKeyValue = localStorage.getItem(this.PRESERVE_PITCH_KEY);
+            return legacyKeyValue === null ? true : legacyKeyValue === 'true';
         } catch {
             return true;
         }
     },
 
+    // Backward-compatible alias used by settings sync.
+    getPreservePitch() {
+        return this.isPreservePitchEnabled();
+    },
+
     setPreservePitch(enabled) {
-        localStorage.setItem(this.PRESERVE_PITCH_KEY, enabled ? 'true' : 'false');
+        const value = enabled ? 'true' : 'false';
+        localStorage.setItem(this.PITCH_PRESERVE_KEY, value);
+        localStorage.setItem(this.PRESERVE_PITCH_KEY, value);
     },
 };
 

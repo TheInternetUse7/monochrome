@@ -17,7 +17,7 @@
   <a href="#installation">Installation</a> •
   <a href="#usage">Usage</a> •
   <a href="#self-hosting">Self-Hosting</a> •
-  <a href="CONTRIBUTE.md">Contributing</a>
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 <p align="center">
@@ -58,6 +58,7 @@
 
 - Dark, minimalist interface optimized for focus
 - Customizable themes
+- Community Theme Store
 - Accurate and unique audio visualizer
 - Offline-capable Progressive Web App (PWA)
 - Media Session API integration for system controls
@@ -80,6 +81,7 @@
 ### Integrations
 
 - Account system for cross-device syncing
+- Customizable & Public Profiles
 - Last.fm and ListenBrainz integration for scrobbling
 - Unreleased music from [ArtistGrid](https://artistgrid.cx)
 - Dynamic Discord Embeds
@@ -105,6 +107,7 @@ For alternative instances, check [INSTANCES.md](INSTANCES.md).
 
 ## Self-Hosting
 
+NOTE: We only allow authorized domains to use our firebase authentication system, so unless you switch to your own firebase project, accounts wont work.
 ### Option 1: Docker (Recommended)
 
 ```bash
@@ -114,6 +117,31 @@ docker compose up -d
 ```
 
 Visit `http://localhost:3000`
+
+### Tailscale Access
+
+Visit `http://<tailscale_server_hostname_or_ip>:3000`
+
+By default, the app uses Vite preview, which restricts access to localhost.
+To allow access over Tailscale:
+
+1. Open `vite.config.js`
+
+2. Uncomment and configure the `preview` section:
+
+```js
+preview: {
+    host: true,
+    allowedHosts: ['<your_tailscale_hostname>'], // e.g. pi5.tailf5f622.ts.net
+},
+```
+
+3. Restart with a fresh container (if already running):
+
+```bash
+docker compose down
+docker compose up -d
+```
 
 For PocketBase, development mode, and advanced setups, see [DOCKER.md](DOCKER.md).
 
@@ -219,11 +247,12 @@ Your synced settings are encrypted with AES-256-GCM using a passphrase that you 
 
 ## Contributing
 
-We welcome contributions from the community! Please see our [Contributing Guide](CONTRIBUTE.md) for:
+We welcome contributions from the community! Please see our [Contributing Guide](CONTRIBUTING.md) for:
 
 - Setting up your development environment
 - Code style and linting
 - Project structure
+- Before You Contribute
 - Commit message conventions
 - Deployment information
 
@@ -238,3 +267,13 @@ We welcome contributions from the community! Please see our [Contributing Guide]
 <p align="center">
   Made with ❤️ by the Monochrome team
 </p>
+
+## Star History
+
+<a href="https://www.star-history.com/#monochrome-music/monochrome&type=date&logscale&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=monochrome-music/monochrome&type=date&theme=dark&logscale&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=monochrome-music/monochrome&type=date&logscale&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=monochrome-music/monochrome&type=date&logscale&legend=top-left" />
+ </picture>
+</a>

@@ -14,13 +14,19 @@ export default defineConfig(({ mode }) => {
             },
         },
         optimizeDeps: {
-            exclude: ['pocketbase'],
+            exclude: ['pocketbase', '@ffmpeg/ffmpeg', '@ffmpeg/util'],
         },
         server: {
             fs: {
                 allow: ['.', 'node_modules'],
+                // host: true,
+                // allowedHosts: ['<your_tailscale_hostname>'], // e.g. pi5.tailf5f622.ts.net
             },
         },
+        // preview: {
+        //     host: true,
+        //     allowedHosts: ['<your_tailscale_hostname>'], // e.g. pi5.tailf5f622.ts.net
+        // },
         build: {
             outDir: 'dist',
             emptyOutDir: true,
@@ -62,7 +68,7 @@ export default defineConfig(({ mode }) => {
                         },
                     ],
                 },
-                includeAssets: ['instances.json', 'discord.html'],
+                includeAssets: ['discord.html'],
                 manifest: false, // Use existing public/manifest.json
             }),
         ],

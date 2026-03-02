@@ -36,11 +36,21 @@ export class Player {
         this.currentRgValues = null;
         this.userVolume = parseFloat(localStorage.getItem('volume') || '0.7');
         this.isFallbackRetry = false;
+        this.autoplayBlocked = false;
+        this.isIOS = typeof window !== 'undefined' && window.__IS_IOS__ === true;
+        this.isPwa =
+            typeof window !== 'undefined' &&
+            (window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator?.standalone === true);
 
         // Sleep timer properties
         this.sleepTimer = null;
         this.sleepTimerEndTime = null;
         this.sleepTimerInterval = null;
+
+        // Apply audio effects when track is ready
+        this.audio.addEventListener('canplay', () => {
+            this.applyAudioEffects();
+        });
 
         // Initialize dash.js player
         this.dashPlayer = MediaPlayer().create();
@@ -68,6 +78,10 @@ export class Player {
                     audioContextManager.init(this.audio);
                 }
                 audioContextManager.resume();
+            }
+            if (document.visibilityState === 'visible' && this.autoplayBlocked) {
+                this.autoplayBlocked = false;
+                this.audio.play().catch(() => {});
             }
         });
     }
@@ -127,14 +141,35 @@ export class Player {
 
     applyAudioEffects() {
         const speed = audioEffectsSettings.getSpeed();
-        if (this.audio.playbackRate !== speed) {
-            this.audio.playbackRate = speed;
+
+        if (this.dashInitialized && this.dashPlayer) {
+            if (this.dashPlayer.getPlaybackRate() !== speed) {
+                this.dashPlayer.setPlaybackRate(speed);
+            }
+        } else {
+            if (this.audio.playbackRate !== speed) {
+                this.audio.playbackRate = speed;
+            }
+        }
+
+        const preservePitch = audioEffectsSettings.isPreservePitchEnabled();
+        if (this.audio.preservesPitch !== preservePitch) {
+            this.audio.preservesPitch = preservePitch;
+            // Firefox support
+            if (this.audio.mozPreservesPitch !== undefined) {
+                this.audio.mozPreservesPitch = preservePitch;
+            }
         }
     }
 
     setPlaybackSpeed(speed) {
         const validSpeed = Math.max(0.01, Math.min(100, parseFloat(speed) || 1.0));
         audioEffectsSettings.setSpeed(validSpeed);
+        this.applyAudioEffects();
+    }
+
+    setPreservePitch(enabled) {
+        audioEffectsSettings.setPreservePitch(enabled);
         this.applyAudioEffects();
     }
 
@@ -164,7 +199,36 @@ export class Player {
                 const albumEl = document.querySelector('.now-playing-bar .album');
                 const artistEl = document.querySelector('.now-playing-bar .artist');
 
-                if (coverEl) coverEl.src = this.api.getCoverUrl(track.album?.cover);
+                if (coverEl) {
+                    const videoCoverUrl = track.album?.videoCover
+                        ? this.api.tidalAPI.getVideoCoverUrl(track.album.videoCover)
+                        : null;
+                    const coverUrl = videoCoverUrl || this.api.getCoverUrl(track.album?.cover);
+
+                    if (videoCoverUrl) {
+                        if (coverEl.tagName === 'IMG') {
+                            const video = document.createElement('video');
+                            video.src = videoCoverUrl;
+                            video.autoplay = true;
+                            video.loop = true;
+                            video.muted = true;
+                            video.playsInline = true;
+                            video.className = coverEl.className;
+                            video.id = coverEl.id;
+                            coverEl.replaceWith(video);
+                        }
+                    } else {
+                        if (coverEl.tagName === 'VIDEO') {
+                            const img = document.createElement('img');
+                            img.src = coverUrl;
+                            img.className = coverEl.className;
+                            img.id = coverEl.id;
+                            coverEl.replaceWith(img);
+                        } else {
+                            coverEl.src = coverUrl;
+                        }
+                    }
+                }
                 if (titleEl) {
                     const qualityBadge = createQualityBadgeHTML(track);
                     titleEl.innerHTML = `${escapeHtml(trackTitle)} ${qualityBadge}`;
@@ -218,70 +282,81 @@ export class Player {
     setupMediaSession() {
         if (!('mediaSession' in navigator)) return;
 
-        navigator.mediaSession.setActionHandler('play', async () => {
-            // Initialize and resume audio context first (required for iOS lock screen)
-            // Must happen before audio.play() or audio won't route through Web Audio
-            if (!audioContextManager.isReady()) {
-                audioContextManager.init(this.audio);
-                this.applyReplayGain();
+        const setHandlers = () => {
+            navigator.mediaSession.setActionHandler('play', async () => {
+                // Initialize and resume audio context first (required for iOS lock screen)
+                // Must happen before audio.play() or audio won't route through Web Audio
+                if (!audioContextManager.isReady()) {
+                    audioContextManager.init(this.audio);
+                    this.applyReplayGain();
+                }
+                await audioContextManager.resume();
+
+                try {
+                    await this.audio.play();
+                } catch (e) {
+                    console.error('MediaSession play failed:', e);
+                    // If play fails, try to handle it like a regular play/pause
+                    this.handlePlayPause();
+                }
+            });
+
+            navigator.mediaSession.setActionHandler('pause', () => {
+                this.audio.pause();
+            });
+
+            navigator.mediaSession.setActionHandler('previoustrack', async () => {
+                // Ensure audio context is active for iOS lock screen controls
+                if (!audioContextManager.isReady()) {
+                    audioContextManager.init(this.audio);
+                    this.applyReplayGain();
+                }
+                await audioContextManager.resume();
+                this.playPrev();
+            });
+
+            navigator.mediaSession.setActionHandler('nexttrack', async () => {
+                // Ensure audio context is active for iOS lock screen controls
+                if (!audioContextManager.isReady()) {
+                    audioContextManager.init(this.audio);
+                    this.applyReplayGain();
+                }
+                await audioContextManager.resume();
+                this.playNext();
+            });
+
+            if (!this.isIOS) {
+                navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+                    const skipTime = details.seekOffset || 10;
+                    this.seekBackward(skipTime);
+                });
+                navigator.mediaSession.setActionHandler('seekforward', (details) => {
+                    const skipTime = details.seekOffset || 10;
+                    this.seekForward(skipTime);
+                });
             }
-            await audioContextManager.resume();
 
-            try {
-                await this.audio.play();
-            } catch (e) {
-                console.error('MediaSession play failed:', e);
-                // If play fails, try to handle it like a regular play/pause
-                this.handlePlayPause();
-            }
-        });
+            navigator.mediaSession.setActionHandler('seekto', (details) => {
+                if (details.seekTime !== undefined) {
+                    this.audio.currentTime = Math.max(0, details.seekTime);
+                    this.updateMediaSessionPositionState();
+                }
+            });
 
-        navigator.mediaSession.setActionHandler('pause', () => {
-            this.audio.pause();
-        });
+            navigator.mediaSession.setActionHandler('stop', () => {
+                this.audio.pause();
+                this.audio.currentTime = 0;
+                this.updateMediaSessionPlaybackState();
+            });
+        };
 
-        navigator.mediaSession.setActionHandler('previoustrack', async () => {
-            // Ensure audio context is active for iOS lock screen controls
-            if (!audioContextManager.isReady()) {
-                audioContextManager.init(this.audio);
-                this.applyReplayGain();
-            }
-            await audioContextManager.resume();
-            this.playPrev();
-        });
-
-        navigator.mediaSession.setActionHandler('nexttrack', async () => {
-            // Ensure audio context is active for iOS lock screen controls
-            if (!audioContextManager.isReady()) {
-                audioContextManager.init(this.audio);
-                this.applyReplayGain();
-            }
-            await audioContextManager.resume();
-            this.playNext();
-        });
-
-        navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-            const skipTime = details.seekOffset || 10;
-            this.seekBackward(skipTime);
-        });
-
-        navigator.mediaSession.setActionHandler('seekforward', (details) => {
-            const skipTime = details.seekOffset || 10;
-            this.seekForward(skipTime);
-        });
-
-        navigator.mediaSession.setActionHandler('seekto', (details) => {
-            if (details.seekTime !== undefined) {
-                this.audio.currentTime = Math.max(0, details.seekTime);
-                this.updateMediaSessionPositionState();
-            }
-        });
-
-        navigator.mediaSession.setActionHandler('stop', () => {
-            this.audio.pause();
-            this.audio.currentTime = 0;
-            this.updateMediaSessionPlaybackState();
-        });
+        if (this.isIOS) {
+            // iOS: set handlers only when playback starts. Setting them in the constructor makes
+            // the lock screen show +10/-10. Registering on first 'playing' gives next/previous track
+            this.audio.addEventListener('playing', () => setHandlers(), { once: true });
+        } else {
+            setHandlers();
+        }
     }
 
     setQuality(quality) {
@@ -356,7 +431,37 @@ export class Player {
         const trackArtistsHTML = getTrackArtistsHTML(track);
         const yearDisplay = getTrackYearDisplay(track);
 
-        document.querySelector('.now-playing-bar .cover').src = this.api.getCoverUrl(track.album?.cover);
+        const coverEl = document.querySelector('.now-playing-bar .cover');
+        if (coverEl) {
+            const videoCoverUrl = track.album?.videoCover
+                ? this.api.tidalAPI.getVideoCoverUrl(track.album.videoCover)
+                : null;
+            const coverUrl = videoCoverUrl || this.api.getCoverUrl(track.album?.cover);
+
+            if (videoCoverUrl) {
+                if (coverEl.tagName === 'IMG') {
+                    const video = document.createElement('video');
+                    video.src = videoCoverUrl;
+                    video.autoplay = true;
+                    video.loop = true;
+                    video.muted = true;
+                    video.playsInline = true;
+                    video.className = coverEl.className;
+                    video.id = coverEl.id;
+                    coverEl.replaceWith(video);
+                }
+            } else {
+                if (coverEl.tagName === 'VIDEO') {
+                    const img = document.createElement('img');
+                    img.src = coverUrl;
+                    img.className = coverEl.className;
+                    img.id = coverEl.id;
+                    coverEl.replaceWith(img);
+                } else {
+                    coverEl.src = coverUrl;
+                }
+            }
+        }
         document.querySelector('.now-playing-bar .title').innerHTML =
             `${escapeHtml(trackTitle)} ${createQualityBadgeHTML(track)}`;
         const albumEl = document.querySelector('.now-playing-bar .album');
@@ -429,37 +534,19 @@ export class Player {
 
                 this.currentRgValues = null;
                 this.applyReplayGain();
-                this.applyAudioEffects();
 
                 this.audio.src = streamUrl;
+                this.applyAudioEffects();
 
                 // Wait for audio to be ready before playing (prevents restart issues with blob URLs)
-                await new Promise((resolve, reject) => {
-                    const onCanPlay = () => {
-                        this.audio.removeEventListener('canplay', onCanPlay);
-                        this.audio.removeEventListener('error', onError);
-                        resolve();
-                    };
-                    const onError = (e) => {
-                        this.audio.removeEventListener('canplay', onCanPlay);
-                        this.audio.removeEventListener('error', onError);
-                        reject(e);
-                    };
-                    this.audio.addEventListener('canplay', onCanPlay);
-                    this.audio.addEventListener('error', onError);
-
-                    // Timeout after 10 seconds
-                    setTimeout(() => {
-                        this.audio.removeEventListener('canplay', onCanPlay);
-                        this.audio.removeEventListener('error', onError);
-                        reject(new Error('Timeout waiting for audio to load'));
-                    }, 10000);
-                });
+                const canPlay = await this.waitForCanPlayOrTimeout();
+                if (!canPlay) return;
 
                 if (startTime > 0) {
                     this.audio.currentTime = startTime;
                 }
-                await this.audio.play();
+                const played = await this.safePlay();
+                if (!played) return;
             } else if (track.isLocal && track.file) {
                 if (this.dashInitialized) {
                     this.dashPlayer.reset(); // Ensure dash is off
@@ -468,37 +555,19 @@ export class Player {
                 streamUrl = URL.createObjectURL(track.file);
                 this.currentRgValues = null; // No replaygain for local files yet
                 this.applyReplayGain();
-                this.applyAudioEffects();
 
                 this.audio.src = streamUrl;
+                this.applyAudioEffects();
 
                 // Wait for audio to be ready before playing
-                await new Promise((resolve, reject) => {
-                    const onCanPlay = () => {
-                        this.audio.removeEventListener('canplay', onCanPlay);
-                        this.audio.removeEventListener('error', onError);
-                        resolve();
-                    };
-                    const onError = (e) => {
-                        this.audio.removeEventListener('canplay', onCanPlay);
-                        this.audio.removeEventListener('error', onError);
-                        reject(e);
-                    };
-                    this.audio.addEventListener('canplay', onCanPlay);
-                    this.audio.addEventListener('error', onError);
-
-                    // Timeout after 10 seconds
-                    setTimeout(() => {
-                        this.audio.removeEventListener('canplay', onCanPlay);
-                        this.audio.removeEventListener('error', onError);
-                        reject(new Error('Timeout waiting for audio to load'));
-                    }, 10000);
-                });
+                const canPlay = await this.waitForCanPlayOrTimeout();
+                if (!canPlay) return;
 
                 if (startTime > 0) {
                     this.audio.currentTime = startTime;
                 }
-                await this.audio.play();
+                const played = await this.safePlay();
+                if (!played) return;
             } else {
                 const isQobuz = String(track.id).startsWith('q:');
 
@@ -548,6 +617,7 @@ export class Player {
                         this.dashPlayer.initialize(this.audio, streamUrl, true);
                         this.dashInitialized = true;
                     }
+                    this.applyAudioEffects();
 
                     if (startTime > 0) {
                         this.dashPlayer.seek(startTime);
@@ -558,39 +628,26 @@ export class Player {
                         this.dashInitialized = false;
                     }
                     this.audio.src = streamUrl;
+                    this.applyAudioEffects();
 
                     // Wait for audio to be ready before playing
-                    await new Promise((resolve, reject) => {
-                        const onCanPlay = () => {
-                            this.audio.removeEventListener('canplay', onCanPlay);
-                            this.audio.removeEventListener('error', onError);
-                            resolve();
-                        };
-                        const onError = (e) => {
-                            this.audio.removeEventListener('canplay', onCanPlay);
-                            this.audio.removeEventListener('error', onError);
-                            reject(e);
-                        };
-                        this.audio.addEventListener('canplay', onCanPlay);
-                        this.audio.addEventListener('error', onError);
-
-                        // Timeout after 10 seconds
-                        setTimeout(() => {
-                            this.audio.removeEventListener('canplay', onCanPlay);
-                            this.audio.removeEventListener('error', onError);
-                            reject(new Error('Timeout waiting for audio to load'));
-                        }, 10000);
-                    });
+                    const canPlay = await this.waitForCanPlayOrTimeout();
+                    if (!canPlay) return;
 
                     if (startTime > 0) {
                         this.audio.currentTime = startTime;
                     }
-                    await this.audio.play();
+                    const played = await this.safePlay();
+                    if (!played) return;
                 }
             }
 
             this.preloadNextTracks();
         } catch (error) {
+            if (error && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
+                this.autoplayBlocked = true;
+                return;
+            }
             console.error(`Could not play track: ${trackTitle}`, error);
             // Skip to next track on unexpected error
             if (recursiveCount < currentQueue.length) {
@@ -684,7 +741,7 @@ export class Player {
         }
 
         if (this.audio.paused) {
-            this.audio.play().catch((e) => {
+            this.safePlay().catch((e) => {
                 if (e.name === 'NotAllowedError' || e.name === 'AbortError') return;
                 console.error('Play failed, reloading track:', e);
                 if (this.currentTrack) {
@@ -722,7 +779,10 @@ export class Player {
                 tracksToShuffle.splice(this.currentQueueIndex, 1);
             }
 
-            tracksToShuffle.sort(() => Math.random() - 0.5);
+            for (let i = tracksToShuffle.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [tracksToShuffle[i], tracksToShuffle[j]] = [tracksToShuffle[j], tracksToShuffle[i]];
+            }
 
             if (currentTrack) {
                 this.shuffledQueue = [currentTrack, ...tracksToShuffle];
@@ -929,26 +989,26 @@ export class Player {
     }
 
     updateMediaSession(track) {
-        const artwork = [];
-        const sizes = ['320'];
         const coverId = track.album?.cover;
         const trackTitle = getTrackTitle(track);
-
-        if (coverId) {
-            sizes.forEach((size) => {
-                artwork.push({
-                    src: this.api.getCoverUrl(coverId, size),
-                    sizes: `${size}x${size}`,
-                    type: 'image/jpeg',
-                });
-            });
-        }
-
         const metadata = {
             title: trackTitle || 'Unknown Title',
             artist: getTrackArtists(track) || 'Unknown Artist',
             album: track.album?.title || 'Unknown Album',
-            artwork: artwork.length > 0 ? artwork : undefined,
+            artwork: coverId
+                ? [
+                      {
+                          src: this.api.getCoverUrl(coverId, '320'),
+                          sizes: '320x320',
+                          type: 'image/jpeg',
+                      },
+                      {
+                          src: this.api.getCoverUrl(coverId, '1280'),
+                          sizes: '1280x1280',
+                          type: 'image/jpeg',
+                      },
+                  ]
+                : undefined,
         };
 
         if ('mediaSession' in navigator) {
@@ -996,6 +1056,53 @@ export class Player {
         } catch (error) {
             console.log('Failed to update Media Session position:', error);
         }
+    }
+
+    async safePlay() {
+        try {
+            await this.audio.play();
+            this.autoplayBlocked = false;
+            return true;
+        } catch (error) {
+            if (error && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
+                this.autoplayBlocked = true;
+                return false;
+            }
+            throw error;
+        }
+    }
+
+    async waitForCanPlayOrTimeout(timeoutMs = 10000) {
+        if (this.audio.readyState >= 2) {
+            return true;
+        }
+
+        return await new Promise((resolve, reject) => {
+            const onCanPlay = () => {
+                this.audio.removeEventListener('canplay', onCanPlay);
+                this.audio.removeEventListener('error', onError);
+                resolve(true);
+            };
+            const onError = (e) => {
+                this.audio.removeEventListener('canplay', onCanPlay);
+                this.audio.removeEventListener('error', onError);
+                reject(e);
+            };
+            this.audio.addEventListener('canplay', onCanPlay);
+            this.audio.addEventListener('error', onError);
+
+            // Timeout after 10 seconds. Treat as autoplay blocked when backgrounded (esp. iOS PWA).
+            setTimeout(() => {
+                this.audio.removeEventListener('canplay', onCanPlay);
+                this.audio.removeEventListener('error', onError);
+                if (document.visibilityState === 'hidden' || (this.isIOS && this.isPwa)) {
+                    this.autoplayBlocked = true;
+                    resolve(false);
+                    return;
+                }
+                reject(new Error('Timeout waiting for audio to load'));
+            }, timeoutMs);
+        });
     }
 
     // Sleep Timer Methods

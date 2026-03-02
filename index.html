@@ -144,7 +144,22 @@
         <div id="fullscreen-cover-overlay" style="display: none">
             <div class="fullscreen-cover-content">
                 <canvas id="visualizer-canvas"></canvas>
-                <button id="close-fullscreen-cover-btn" title="Close">&times;</button>
+                <button id="toggle-ui-btn" class="fullscreen-ui-toggle" title="Toggle UI">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="9" y1="3" x2="9" y2="21"></line>
+                    </svg>
+                </button>
                 <button id="toggle-fullscreen-lyrics-btn" class="fullscreen-lyrics-toggle" title="Toggle Lyrics">
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -163,6 +178,7 @@
                         <line x1="8" y1="22" x2="16" y2="22" />
                     </svg>
                 </button>
+                <button id="close-fullscreen-cover-btn" title="Close">&times;</button>
                 <div class="fullscreen-main-view">
                     <img
                         id="fullscreen-cover-image"
@@ -920,7 +936,7 @@
                             <img
                                 id="status-preview-img"
                                 src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
-                                alt="Status artwork preview"
+                                alt="Status preview"
                                 style="width: 32px; height: 32px; border-radius: 4px; object-fit: cover"
                             />
                             <div style="flex: 1; min-width: 0">
@@ -1259,6 +1275,304 @@
             </div>
         </div>
 
+        <div id="theme-store-modal" class="modal">
+            <div class="modal-overlay"></div>
+            <div
+                class="modal-content wide"
+                style="height: 80vh; display: flex; flex-direction: column; max-height: 80vh"
+            >
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
+                    <h3 style="margin: 0">Theme Store</h3>
+                    <button
+                        class="close-modal-btn"
+                        style="
+                            background: none;
+                            border: none;
+                            font-size: 1.5rem;
+                            cursor: pointer;
+                            color: var(--muted-foreground);
+                        "
+                    >
+                        &times;
+                    </button>
+                </div>
+
+                <div class="search-tabs" style="margin-bottom: 1rem">
+                    <button class="search-tab active" data-tab="browse">Browse</button>
+                    <button class="search-tab" data-tab="upload">Upload</button>
+                </div>
+
+                <div
+                    id="theme-store-details"
+                    style="display: none; flex-direction: column; height: 100%; overflow: hidden"
+                >
+                    <button
+                        class="btn-secondary"
+                        id="theme-details-back-btn"
+                        style="
+                            align-self: flex-start;
+                            margin-bottom: 1rem;
+                            display: flex;
+                            align-items: center;
+                            gap: 0.5rem;
+                        "
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="m15 18-6-6 6-6" />
+                        </svg>
+                        Back
+                    </button>
+                    <div style="flex: 1; overflow-y: auto; padding-right: 0.5rem">
+                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 2rem">
+                            <div
+                                id="theme-details-preview-container"
+                                style="
+                                    width: 300px;
+                                    height: 220px;
+                                    flex-shrink: 0;
+                                    border: 1px solid var(--border);
+                                    border-radius: var(--radius);
+                                "
+                            ></div>
+                            <div style="flex: 1; min-width: 250px">
+                                <h2 id="theme-details-name" style="font-size: 2rem; margin-bottom: 0.5rem"></h2>
+                                <div
+                                    class="meta"
+                                    style="
+                                        color: var(--muted-foreground);
+                                        font-size: 0.9rem;
+                                        margin-bottom: 1rem;
+                                        line-height: 1.6;
+                                    "
+                                >
+                                    <div id="theme-details-author"></div>
+                                    <div>
+                                        Created: <span id="theme-details-created"></span> - Updated:
+                                        <span id="theme-details-updated"></span>
+                                    </div>
+                                    <div>Installs: <span id="theme-details-installs">0</span></div>
+                                </div>
+                                <button
+                                    id="theme-details-apply-btn"
+                                    class="btn-primary"
+                                    style="width: 100%; max-width: 200px"
+                                >
+                                    Apply Theme
+                                </button>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 2rem">
+                            <h3 style="font-size: 1.2rem; margin-bottom: 0.5rem">Description</h3>
+                            <p
+                                id="theme-details-desc"
+                                style="white-space: pre-wrap; color: var(--foreground); line-height: 1.6"
+                            ></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    id="theme-store-browse"
+                    class="search-tab-content active"
+                    style="flex: 1; overflow-y: auto; min-height: 0"
+                >
+                    <div class="track-list-search-container" style="margin: 0 0 1rem 0">
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            class="search-icon"
+                        >
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <input
+                            type="search"
+                            id="theme-store-search"
+                            placeholder="Search themes..."
+                            class="track-list-search-input"
+                            autocomplete="off"
+                        />
+                    </div>
+                    <div id="community-themes-grid" class="card-grid"></div>
+                    <div id="theme-store-loading" style="text-align: center; padding: 2rem; display: none">
+                        <div class="animate-spin" style="display: inline-block">
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="24"
+                                height="24"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    id="theme-store-upload"
+                    class="search-tab-content"
+                    style="flex: 1; overflow-y: auto; min-height: 0"
+                >
+                    <div
+                        id="theme-upload-auth-message"
+                        style="
+                            display: none;
+                            text-align: center;
+                            padding: 2rem;
+                            flex-direction: column;
+                            align-items: center;
+                            gap: 1rem;
+                        "
+                    >
+                        <p>You need to be logged in to upload themes.</p>
+                        <button class="btn-primary" id="theme-store-login-btn">Go to Login</button>
+                    </div>
+                    <form id="theme-upload-form">
+                        <div style="margin-bottom: 1rem">
+                            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem">Theme Name</label>
+                            <input
+                                type="text"
+                                id="theme-upload-name"
+                                class="template-input"
+                                placeholder="My Awesome Theme"
+                                required
+                            />
+                        </div>
+                        <div style="margin-bottom: 1rem">
+                            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem">Description</label>
+                            <textarea
+                                id="theme-upload-desc"
+                                class="template-input"
+                                placeholder="Describe your theme..."
+                                style="min-height: 80px; resize: vertical"
+                            ></textarea>
+                        </div>
+                        <div style="margin-bottom: 1rem">
+                            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem"
+                                >Author Website (Optional)</label
+                            >
+                            <input
+                                type="url"
+                                id="theme-upload-website"
+                                class="template-input"
+                                placeholder="https://example.com"
+                            />
+                            <p style="font-size: 0.8rem; color: var(--muted-foreground); margin-top: 0.25rem">
+                                It is recommended to create a Monochrome profile instead.
+                            </p>
+                        </div>
+                        <div style="margin-bottom: 1rem">
+                            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9rem">CSS</label>
+                            <p style="font-size: 0.8rem; color: var(--muted-foreground); margin-bottom: 0.5rem">
+                                Define your CSS variables or custom styles here.
+                                <a
+                                    href="https://github.com/monochrome-music/monochrome/blob/main/THEME_GUIDE.md"
+                                    target="_blank"
+                                    style="text-decoration: underline; color: var(--primary)"
+                                    >Read the Theme Guide</a
+                                >.
+                            </p>
+                            <div class="theme-editor-toolbar">
+                                <div class="color-picker-group">
+                                    <input type="color" id="te-bg-color" title="Background" />
+                                    <input type="color" id="te-fg-color" title="Foreground" />
+                                    <input type="color" id="te-primary-color" title="Primary" />
+                                    <input type="color" id="te-sec-color" title="Secondary" />
+                                    <input type="color" id="te-accent-color" title="Accent/Highlight" />
+                                    <input type="color" id="te-card-color" title="Card Background" />
+                                    <input type="color" id="te-border-color" title="Border Color" />
+                                    <input type="color" id="te-muted-color" title="Muted Text" />
+                                </div>
+                                <div class="style-picker-group">
+                                    <select id="te-font-family" title="Font Family">
+                                        <option value="">Font...</option>
+                                        <option value="'Inter', sans-serif">Inter</option>
+                                        <option value="system-ui, -apple-system, sans-serif">System</option>
+                                        <option value="'Courier New', monospace">Mono</option>
+                                        <option value="'Times New Roman', serif">Serif</option>
+                                    </select>
+                                    <input
+                                        type="text"
+                                        id="te-font-custom"
+                                        placeholder="Custom Font..."
+                                        style="
+                                            height: 24px;
+                                            padding: 0 4px;
+                                            font-size: 0.75rem;
+                                            width: 100px;
+                                            border: 1px solid var(--border);
+                                            border-radius: var(--radius-sm);
+                                            background: var(--input);
+                                            color: var(--foreground);
+                                        "
+                                    />
+                                    <select id="te-radius" title="Border Radius">
+                                        <option value="">Radius...</option>
+                                        <option value="0px">Square</option>
+                                        <option value="4px">Small</option>
+                                        <option value="8px">Medium</option>
+                                        <option value="16px">Large</option>
+                                    </select>
+                                </div>
+                                <div class="editor-actions">
+                                    <button
+                                        type="button"
+                                        id="te-insert-template"
+                                        class="btn-secondary"
+                                        style="padding: 2px 8px; font-size: 0.8rem"
+                                    >
+                                        Template
+                                    </button>
+                                    <button
+                                        type="button"
+                                        id="te-toggle-preview"
+                                        class="btn-secondary"
+                                        style="padding: 2px 8px; font-size: 0.8rem"
+                                    >
+                                        Preview
+                                    </button>
+                                </div>
+                            </div>
+                            <textarea
+                                id="theme-upload-css"
+                                class="template-input"
+                                style="min-height: 200px; font-family: monospace; white-space: pre"
+                                placeholder=":root {&#10;    --background: #000000;&#10;    --foreground: #ffffff;&#10;    /* ... */&#10;}"
+                                required
+                            ></textarea>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="submit" class="btn-primary">Upload Theme</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div id="theme-preview-window" style="display: none"></div>
+
         <div id="tracker-modal" class="modal tracker-modal">
             <div class="modal-overlay"></div>
             <div class="modal-content wide" style="max-height: 85vh; display: flex; flex-direction: column">
@@ -1327,6 +1641,51 @@
                         Proceed & Don't Show Again
                     </button>
                     <button id="epilepsy-cancel-btn" class="btn-secondary" style="width: 100%">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="donate-modal" class="modal">
+            <div class="modal-overlay"></div>
+            <div class="modal-content">
+                <h3 style="text-align: center; margin-bottom: 1rem">Support Monochrome</h3>
+                <p style="text-align: center; margin-bottom: 1.5rem; line-height: 1.6; color: var(--muted-foreground)">
+                    If Monochrome has been useful to you and you're able to, consider making a donation. It helps pay
+                    for the server and domain, and you get to support us :)
+                </p>
+                <div style="display: flex; justify-content: center; margin-bottom: 2rem">
+                    <a
+                        href="https://ko-fi.com/monochromemusic"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="btn-primary"
+                        style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem"
+                    >
+                        Donate on Ko-fi
+                    </a>
+                </div>
+                <div style="text-align: center; padding-top: 1rem; border-top: 1px solid var(--border)">
+                    <p style="font-size: 0.9rem; color: var(--muted-foreground); margin-bottom: 0.5rem">
+                        An alternative way to support us is by starring us on GitHub, and it's completely free!
+                    </p>
+                    <a
+                        href="https://github.com/monochrome-music/monochrome"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="btn-secondary"
+                        style="
+                            text-decoration: none;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 0.5rem;
+                            margin-top: 0.5rem;
+                        "
+                    >
+                        Star on GitHub
+                    </a>
+                </div>
+                <div class="modal-actions" style="justify-content: center; margin-top: 1.5rem">
+                    <button id="close-donate-modal-btn" class="btn-secondary">Close</button>
                 </div>
             </div>
         </div>
@@ -1483,7 +1842,7 @@
                                 </a>
                             </li>
                             <li class="nav-item" id="sidebar-nav-donate">
-                                <a href="https://ko-fi.com/monochromemusic" target="_blank" rel="noopener noreferrer">
+                                <a id="sidebar-donate-link" style="cursor: pointer">
                                     <svg
                                         xmlns="http://www.w3.org/2000/svg"
                                         width="24"
@@ -2409,23 +2768,6 @@
                                     </svg>
                                     <span>Download</span>
                                 </button>
-                                <button id="add-playlist-to-playlist-btn" class="btn-secondary" title="Add to Playlist">
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        width="20"
-                                        height="20"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                    >
-                                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                                    </svg>
-                                    <span>Add to Playlist</span>
-                                </button>
                                 <button
                                     id="like-playlist-btn"
                                     class="btn-secondary like-btn"
@@ -2496,8 +2838,31 @@
                         id="playlist-section-recommended"
                         style="display: none; margin-top: 3rem"
                     >
-                        <h2 class="section-title">Recommended Songs</h2>
-                        <p style="color: grey; margin-bottom: 15px">Suggested Songs From Your Playlist</p>
+                        <div class="section-header-row">
+                            <div>
+                                <h2 class="section-title">Recommended Songs</h2>
+                                <p style="color: grey; margin-bottom: 15px">Suggested Songs From Your Playlist</p>
+                            </div>
+                            <button
+                                id="refresh-recommended-songs-btn"
+                                class="btn-secondary"
+                                title="Refresh Recommendations"
+                            >
+                                <svg
+                                    width="18"
+                                    height="18"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                                    <path d="M21 3v5h-5" />
+                                </svg>
+                            </button>
+                        </div>
                         <div class="track-list" id="playlist-detail-recommended"></div>
                     </section>
                 </section>
@@ -2607,6 +2972,8 @@
                         <div class="detail-header-info">
                             <h1 class="title" id="artist-detail-name"></h1>
                             <div class="meta" id="artist-detail-meta"></div>
+                            <div id="artist-detail-socials" class="artist-socials"></div>
+                            <div id="artist-detail-bio" class="artist-bio"></div>
                             <div class="detail-header-actions">
                                 <button id="play-artist-radio-btn" class="btn-primary" title="Artist Radio">
                                     <svg
@@ -2991,6 +3358,52 @@
                                     <div class="theme-option" data-theme="latte">Latte</div>
                                     <div class="theme-option" data-theme="custom">Custom</div>
                                 </div>
+                                <div id="applied-community-theme-container" style="display: none; margin-top: 1rem">
+                                    <button
+                                        id="applied-community-theme-btn"
+                                        class="btn-secondary"
+                                        style="
+                                            width: 100%;
+                                            display: flex;
+                                            justify-content: space-between;
+                                            align-items: center;
+                                            padding: 1rem;
+                                        "
+                                    >
+                                        <span>Applied Community Theme</span>
+                                        <span
+                                            id="applied-theme-name"
+                                            style="color: var(--muted-foreground); font-size: 0.9rem"
+                                        ></span>
+                                    </button>
+                                    <div
+                                        id="community-theme-details-panel"
+                                        style="
+                                            display: none;
+                                            padding: 1rem;
+                                            background: var(--secondary);
+                                            border-radius: var(--radius);
+                                            margin-top: 0.5rem;
+                                            border: 1px solid var(--border);
+                                        "
+                                    >
+                                        <div
+                                            style="margin-bottom: 0.5rem; font-weight: 600"
+                                            id="ct-details-title"
+                                        ></div>
+                                        <div
+                                            style="
+                                                margin-bottom: 1rem;
+                                                font-size: 0.9rem;
+                                                color: var(--muted-foreground);
+                                            "
+                                            id="ct-details-author"
+                                        ></div>
+                                        <button id="ct-unapply-btn" class="btn-secondary danger" style="width: 100%">
+                                            Unapply Theme
+                                        </button>
+                                    </div>
+                                </div>
                                 <div class="custom-theme-editor" id="custom-theme-editor">
                                     <h4>Custom Theme</h4>
                                     <div class="theme-color-grid" id="theme-color-grid"></div>
@@ -2998,6 +3411,15 @@
                                         <button class="btn-secondary" id="apply-custom-theme">Apply Theme</button>
                                         <button class="btn-secondary" id="reset-custom-theme">Reset</button>
                                     </div>
+                                </div>
+                                <div class="setting-item">
+                                    <div class="info">
+                                        <span class="label">Community Themes</span>
+                                        <span class="description"
+                                            >Browse and apply themes created by the community</span
+                                        >
+                                    </div>
+                                    <button id="open-theme-store-btn" class="btn-secondary">Open Theme Store</button>
                                 </div>
                                 <div class="setting-item font-settings-container">
                                     <div class="info">
@@ -3952,8 +4374,20 @@
                                     <select id="download-quality-setting">
                                         <option value="HI_RES_LOSSLESS">Hi-Res FLAC (24-bit)</option>
                                         <option value="LOSSLESS">FLAC (Lossless)</option>
+                                        <option value="MP3_320">MP3 320kbps</option>
                                         <option value="HIGH">AAC 320kbps</option>
                                         <option value="LOW">AAC 96kbps</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item">
+                                    <div class="info">
+                                        <span class="label">Lossless Container</span>
+                                        <span class="description">Container format for lossless downloads</span>
+                                    </div>
+                                    <select id="lossless-container-setting">
+                                        <option value="flac">FLAC</option>
+                                        <option value="alac">Apple Lossless</option>
+                                        <option value="nochange">Don't change</option>
                                     </select>
                                 </div>
                                 <div class="setting-item">
@@ -4084,6 +4518,18 @@
                                         />
                                         <span style="font-family: var(--font-family)">x</span>
                                     </div>
+                                </div>
+
+                                <!-- Preserve Pitch Control -->
+                                <div class="setting-item">
+                                    <div class="info">
+                                        <span class="label">Preserve Pitch</span>
+                                        <span class="description">Keep original pitch when changing speed</span>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="preserve-pitch-toggle" />
+                                        <span class="slider"></span>
+                                    </label>
                                 </div>
 
                                 <!-- 16-Band Equalizer -->
@@ -4543,6 +4989,18 @@
                                         <span class="slider"></span>
                                     </label>
                                 </div>
+                                <div class="setting-item">
+                                    <div class="info">
+                                        <span class="label">Separate Discs in ZIP</span>
+                                        <span class="description"
+                                            >Put tracks in Disc folders when a release has multiple discs</span
+                                        >
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="separate-discs-zip-toggle" />
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -4777,9 +5235,7 @@
                                     flex-wrap: wrap;
                                 "
                             >
-                                <a href="https://ko-fi.com/monochromemusic">
-                                    <button id="donate-btn" class="btn-secondary">Donate to Monochrome</button>
-                                </a>
+                                <button id="donate-btn" class="btn-secondary">Donate to Monochrome</button>
                             </div>
                         </div>
                         <br /><br /><br />
@@ -4809,33 +5265,13 @@
                                 </svg>
                                 View on GitHub
                             </a>
-                            <br />
-                            <a
-                                href="https://github.com/eduardprigoana/monochrome"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="github-link"
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    width="24"
-                                    height="24"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    class="lucide lucide-github-icon lucide-github"
-                                >
-                                    <path
-                                        d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"
-                                    />
-                                    <path d="M9 18c-4.51 2-5-2-7-2" />
-                                </svg>
-                                View on GitHub (Original Repo)
-                            </a>
                         </div>
+                        <p style="text-align: center; color: grey">
+                            made with ‪‪❤︎‬ by
+                            <a href="https://prigoana.com/" style="text-decoration: underline">Edideaur</a>,
+                            <a href="https://samidy.com" style="text-decoration: underline">Samidy</a> &
+                            <a href="https://github.com/JulienMaille" style="text-decoration: underline">Julien</a>
+                        </p>
                         <div class="about-footer">
                             <p class="version">Version 2.2.0</p>
                             <p class="disclaimer">
@@ -5014,9 +5450,7 @@
                             If Monochrome has been useful to you and you're able to, consider making a donation. <br />
                             It helps pay for the domain, and you get to support us :)
                         </p>
-                        <a href="https://ko-fi.com/monochromemusic">
-                            <button id="donate-btn-page" class="btn-secondary">Donate to Monochrome</button>
-                        </a>
+                        <button id="donate-btn-page" class="btn-secondary">Donate to Monochrome</button>
                     </div>
                 </div>
             </main>

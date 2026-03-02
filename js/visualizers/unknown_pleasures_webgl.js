@@ -13,8 +13,9 @@ export class UnknownPleasuresWebGL {
     static PROPAGATION_SPEED = 0.7;
 
     // Glow intensity: controls how strong the glow effect is
-    // Lower = subtler glow (0.5 = subtle, 1.0 = normal, 2.0 = strong)
-    static GLOW_INTENSITY = 0.7;
+    static GLOW_INTENSITY = 5.0;
+
+    static NOISE_STRENGTH = 0.04;
 
     constructor() {
         this.name = 'Unknown Pleasures';
@@ -88,32 +89,54 @@ export class UnknownPleasuresWebGL {
         }
     }
 
+    _createBuffers() {
+        this.quadBuffer = this.gl.createBuffer();
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.quadBuffer);
+        this.gl.bufferData(
+            this.gl.ARRAY_BUFFER,
+            new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+            this.gl.STATIC_DRAW
+        );
+
+        this.lineBuffer = this.gl.createBuffer();
+
+        // Pre-allocate vertex buffer (max possible size: historySize * dataPoints * 6 vertices * 3 floats)
+        const maxVertices = this.historySize * this.dataPoints * 6; // 6 vertices per segment
+        this.vertexBuffer = new Float32Array(maxVertices * 3); // 3 floats per vertex (x,y,edge)
+    }
+
     _initGL(gl, width, height) {
         if (this.lineProgram) return;
         this.gl = gl;
 
-        // === LINE SHADER (draws thick colored lines as quads) ===
+        // === LINE SHADER (draws thick colored lines as quads with AA edges) ===
         const lineVS = `
-            attribute vec2 a_position;
+            attribute vec3 a_posEdge; // xy = position, z = edge distance (-1 to +1)
+            varying float v_edge;
             
             void main() {
-                gl_Position = vec4(a_position, 0.0, 1.0);
+                gl_Position = vec4(a_posEdge.xy, 0.0, 1.0);
+                v_edge = a_posEdge.z;
             }
         `;
 
         const lineFS = `
             precision mediump float;
             uniform vec3 u_color;
+            varying float v_edge;
             
             void main() {
-                gl_FragColor = vec4(u_color, 1.0);
+                // Smooth antialiasing at edges
+                float edge = abs(v_edge);
+                float aa = 1.0 - smoothstep(0.6, 1.0, edge);
+                gl_FragColor = vec4(u_color * aa, aa);
             }
         `;
 
         this.lineProgram = this._createProgram(gl, lineVS, lineFS);
         if (!this.lineProgram) return;
 
-        this.line_a_position = gl.getAttribLocation(this.lineProgram, 'a_position');
+        this.line_a_posEdge = gl.getAttribLocation(this.lineProgram, 'a_posEdge');
         this.line_u_color = gl.getUniformLocation(this.lineProgram, 'u_color');
 
         // === BRIGHTNESS EXTRACTION SHADER ===
@@ -136,30 +159,10 @@ export class UnknownPleasuresWebGL {
             uniform float u_isDarkTheme;
             
             void main() {
-                vec4 color = texture2D(u_texture, v_uv);
-                
-                float contribution;
-                float outputMult;
-                
-                if (u_isDarkTheme > 0.5) {
-                    // Dark mode: use brightness (bright lines on dark background)
-                    float brightness = max(color.r, max(color.g, color.b));
-                    contribution = max(0.0, brightness - u_threshold) / (1.0 - u_threshold);
-                    outputMult = 0.75;
-                } else {
-                    // Light mode: use saturation (colored lines on gray background)
-                    float maxC = max(color.r, max(color.g, color.b));
-                    float minC = min(color.r, min(color.g, color.b));
-                    float saturation = maxC > 0.0 ? (maxC - minC) / maxC : 0.0;
-                    // Lower threshold to capture more of the line, boost output
-                    contribution = max(0.0, saturation - 0.15) / 0.85;
-                    // Boost contribution with power curve for stronger glow
-                    contribution = pow(contribution, 0.7);
-                    outputMult = 1.5;
-                }
-                
-                // Output the glowing parts
-                gl_FragColor = vec4(color.rgb * contribution * outputMult, 1.0);
+                // Since Pass 1 now clears to transparent, the scene texture only contains the isolated lines.
+                // We don't need to extract brightness by darkening the background anymore.
+                // Just pass the lines through so they can be blurred.
+                gl_FragColor = texture2D(u_texture, v_uv);
             }
         `;
 
@@ -190,27 +193,21 @@ export class UnknownPleasuresWebGL {
             uniform sampler2D u_texture;
             uniform vec2 u_resolution;
             uniform vec2 u_direction;
-            uniform float u_radius;
+            uniform float u_spread; // Used instead of u_radius
             
+            // 9-tap Gaussian with expanding offsets
             void main() {
-                vec2 texelSize = 1.0 / u_resolution;
-                // Fixed small step (1.5 pixels) for smooth gradient
-                // Multiple passes will extend the blur
-                vec2 step = u_direction * texelSize * 1.5;
+                // Expanding offsets for stronger glow (Thread Ripper Style)
+                vec2 off1 = vec2(1.3846153846) * u_direction * u_spread;
+                vec2 off2 = vec2(3.2307692308) * u_direction * u_spread;
                 
-                // 9-tap Gaussian weights (sum = 1.0)
-                vec4 result = 
-                    texture2D(u_texture, v_uv - 4.0 * step) * 0.0162 +
-                    texture2D(u_texture, v_uv - 3.0 * step) * 0.0540 +
-                    texture2D(u_texture, v_uv - 2.0 * step) * 0.1216 +
-                    texture2D(u_texture, v_uv - 1.0 * step) * 0.1945 +
-                    texture2D(u_texture, v_uv)              * 0.2270 +
-                    texture2D(u_texture, v_uv + 1.0 * step) * 0.1945 +
-                    texture2D(u_texture, v_uv + 2.0 * step) * 0.1216 +
-                    texture2D(u_texture, v_uv + 3.0 * step) * 0.0540 +
-                    texture2D(u_texture, v_uv + 4.0 * step) * 0.0162;
+                vec4 color = texture2D(u_texture, v_uv) * 0.2270270270;
+                color += texture2D(u_texture, v_uv + (off1 / u_resolution)) * 0.3162162162;
+                color += texture2D(u_texture, v_uv - (off1 / u_resolution)) * 0.3162162162;
+                color += texture2D(u_texture, v_uv + (off2 / u_resolution)) * 0.0702702703;
+                color += texture2D(u_texture, v_uv - (off2 / u_resolution)) * 0.0702702703;
                 
-                gl_FragColor = result;
+                gl_FragColor = color;
             }
         `;
 
@@ -221,39 +218,65 @@ export class UnknownPleasuresWebGL {
         this.blur_u_texture = gl.getUniformLocation(this.blurProgram, 'u_texture');
         this.blur_u_resolution = gl.getUniformLocation(this.blurProgram, 'u_resolution');
         this.blur_u_direction = gl.getUniformLocation(this.blurProgram, 'u_direction');
-        this.blur_u_radius = gl.getUniformLocation(this.blurProgram, 'u_radius');
+        this.blur_u_spread = gl.getUniformLocation(this.blurProgram, 'u_spread');
 
         // === COMPOSITE SHADER (combines original + blurred glow) ===
+        // === COMPOSITE SHADER (exact copy from Thread Ripper) ===
         const compositeFS = `
             precision mediump float;
             varying vec2 v_uv;
             uniform sampler2D u_scene;
             uniform sampler2D u_blur;
             uniform float u_glowStrength;
-            uniform float u_isDarkTheme;
+            uniform float u_noiseStrength;
+            uniform float u_isDarkTheme; // Kept for compatibility but unused in logic below
+            uniform float u_time;
             
+            float rand(vec2 co) {
+                return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+            }
+
             void main() {
                 vec4 original = texture2D(u_scene, v_uv);
                 vec4 blur = texture2D(u_blur, v_uv);
                 
-                vec3 finalColor;
+                // Additive glow on top of original lines
+                vec3 rgb = original.rgb + blur.rgb * u_glowStrength;
                 
-                if (u_isDarkTheme > 0.5) {
-                    // Dark mode: additive glow (adds brightness to dark background)
-                    vec3 glow = blur.rgb * u_glowStrength;
-                    finalColor = original.rgb + glow;
-                } else {
-                    // Light mode: TINT toward glow color instead of adding
-                    // This shifts the gray background toward the line color
-                    float glowIntensity = max(blur.r, max(blur.g, blur.b));
-                    float tintStrength = glowIntensity * u_glowStrength * 0.8; // Boosted from 0.4
-                    // Mix original with glow color based on intensity
-                    vec3 glowColor = blur.rgb / max(glowIntensity, 0.001); // Normalize to get pure color
-                    finalColor = mix(original.rgb, glowColor, tintStrength);
-                }
+                // Vignette: blur edges for depth
+                float dist = distance(v_uv, vec2(0.5));
+                float vignette = smoothstep(0.4, 0.8, dist);
+                // We handle scaling in the final mix later to avoid breaking the HDR mapping above.
+                // The rgb here is the base scene before the final exponential glow math.
+
+                float noise = rand(v_uv * 10.0); 
+                float noiseStrength = 0.06; 
+                rgb += (noise - 0.5) * noiseStrength;
+
+                // In light mode (u_isDarkTheme == 0.0), the additive glow effect naturally appears weaker 
+                // against the bright background. We apply a 1.5x perceptual boost to match dark mode intensity.
+                float themeBoost = mix(1.5, 1.0, u_isDarkTheme);
+                // Using 1.0 - exp(-x) gives butter-smooth HDR-like falloff, eliminating harsh banding.
+                // We square the intensity (gamma 2.0) to dramatically increase the "core" opacity of the glow
+                // making it much more visible while preserving the smooth edges.
+                vec3 rawGlow = blur.rgb * (u_glowStrength * themeBoost);
+                float glowIntensity = max(rawGlow.r, max(rawGlow.g, rawGlow.b));
                 
-                // Preserve alpha from scene (needed for semi-transparent backgrounds)
-                gl_FragColor = vec4(finalColor, original.a);
+                // Boost density significantly before applying HDR curve
+                float density = glowIntensity * glowIntensity * 1.5;
+                float smoothGlowAlpha = 1.0 - exp(-density);
+                
+                // Keep the color strictly within valid premultiplied alpha bounds (rgb <= alpha)
+                vec3 safeGlowRgb = glowIntensity > 0.0 ? (rawGlow / glowIntensity) * smoothGlowAlpha : vec3(0.0);
+                
+                // Additive over the core lines
+                rgb = original.rgb + safeGlowRgb;
+
+                // Final alpha is the line's alpha plus the glow's alpha
+                float finalAlpha = clamp(original.a + smoothGlowAlpha, 0.0, 1.0);
+
+                // Output RGB and Alpha for PREMULTIPLIED alpha blending
+                gl_FragColor = vec4(rgb, finalAlpha); 
             }
         `;
 
@@ -264,17 +287,11 @@ export class UnknownPleasuresWebGL {
         this.composite_u_scene = gl.getUniformLocation(this.compositeProgram, 'u_scene');
         this.composite_u_blur = gl.getUniformLocation(this.compositeProgram, 'u_blur');
         this.composite_u_glowStrength = gl.getUniformLocation(this.compositeProgram, 'u_glowStrength');
+        this.composite_u_noiseStrength = gl.getUniformLocation(this.compositeProgram, 'u_noiseStrength');
         this.composite_u_isDarkTheme = gl.getUniformLocation(this.compositeProgram, 'u_isDarkTheme');
+        this.composite_u_time = gl.getUniformLocation(this.compositeProgram, 'u_time');
 
-        // === FULLSCREEN QUAD BUFFER ===
-        this.quadBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
-
-        // === LINE GEOMETRY BUFFER (dynamic) ===
-        this.lineBuffer = gl.createBuffer();
-
-        // === FRAMEBUFFER FOR POST-PROCESSING ===
+        this._createBuffers(); // Use helper
         this._createFramebuffer(gl, width, height);
 
         gl.enable(gl.BLEND);
@@ -312,7 +329,7 @@ export class UnknownPleasuresWebGL {
     }
 
     _createFramebuffer(gl, width, height) {
-        // Framebuffer 1: Scene (lines)
+        // Framebuffer 1: Scene (lines) - FULL RESOLUTION
         this.framebuffer = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
 
@@ -326,13 +343,17 @@ export class UnknownPleasuresWebGL {
 
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.sceneTexture, 0);
 
-        // Framebuffer 2: Blur intermediate (for horizontal pass)
+        // Blur Resolution (Half size for performance)
+        const blurW = Math.max(1, width >> 1);
+        const blurH = Math.max(1, height >> 1);
+
+        // Framebuffer 2: Blur intermediate
         this.blurFramebuffer = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurFramebuffer);
 
         this.blurTexture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, this.blurTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, blurW, blurH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -340,13 +361,13 @@ export class UnknownPleasuresWebGL {
 
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.blurTexture, 0);
 
-        // Framebuffer 3: Blur final (for vertical pass result)
+        // Framebuffer 3: Blur final
         this.blurFinalFramebuffer = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurFinalFramebuffer);
 
         this.blurFinalTexture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, this.blurFinalTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, blurW, blurH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -358,12 +379,17 @@ export class UnknownPleasuresWebGL {
     }
 
     _resizeFramebuffer(gl, width, height) {
+        const blurW = Math.max(1, width >> 1);
+        const blurH = Math.max(1, height >> 1);
+
         gl.bindTexture(gl.TEXTURE_2D, this.sceneTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
         gl.bindTexture(gl.TEXTURE_2D, this.blurTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, blurW, blurH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
         gl.bindTexture(gl.TEXTURE_2D, this.blurFinalTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, blurW, blurH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     }
 
     _buildPalette(color) {
@@ -392,66 +418,124 @@ export class UnknownPleasuresWebGL {
         this._paletteColor = color;
     }
 
-    /**
-     * Generate quad vertices for a thick line segment with round joints
-     * Returns triangles for each segment + circles at joints
-     */
-    _generateLineQuads(points, thickness, width, height) {
-        const vertices = [];
+    _generateLineQuads(points, thickness, width, height, outBuffer, offset) {
+        if (points.length < 2) return 0;
 
-        // Convert to clip space helper
-        const toClip = (x, y) => [(x / width) * 2 - 1, 1 - (y / height) * 2];
+        const n = points.length;
+        let ptr = offset;
 
-        // Generate circle at a point (for round joints/caps)
-        const addCircle = (px, py, radius, segments = 8) => {
-            const [cx, cy] = toClip(px, py);
-            const rw = (radius / width) * 2;
-            const rh = (radius / height) * 2;
+        // Precompute normals (reuse internal arrays if possible, but for now stack var is fine)
+        // Optimization: Single pass miter calculation
 
-            for (let s = 0; s < segments; s++) {
-                const a1 = (s / segments) * Math.PI * 2;
-                const a2 = ((s + 1) / segments) * Math.PI * 2;
+        // Helper to clip X,Y
+        const wInv = 2 / width;
+        const hInv = 2 / height;
 
-                vertices.push(cx, cy);
-                vertices.push(cx + Math.cos(a1) * rw, cy + Math.sin(a1) * rh);
-                vertices.push(cx + Math.cos(a2) * rw, cy + Math.sin(a2) * rh);
-            }
-        };
-
-        // Add start cap
-        if (points.length > 0) {
-            addCircle(points[0].x, points[0].y, thickness);
-        }
-
-        for (let i = 0; i < points.length - 1; i++) {
+        for (let i = 0; i < n - 1; i++) {
             const p1 = points[i];
             const p2 = points[i + 1];
 
-            // Direction vector
-            const dx = p2.x - p1.x;
-            const dy = p2.y - p1.y;
-            const len = Math.sqrt(dx * dx + dy * dy);
-            if (len < 0.001) continue;
+            // Calculate segment normal
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            let len = Math.sqrt(dx * dx + dy * dy);
+            let nx, ny;
 
-            // Perpendicular (normal) vector
-            const nx = (-dy / len) * thickness;
-            const ny = (dx / len) * thickness;
+            if (len < 0.001) {
+                nx = 0;
+                ny = -1;
+            } else {
+                nx = -dy / len;
+                ny = dx / len;
+            }
 
-            const [x1a, y1a] = toClip(p1.x - nx, p1.y - ny);
-            const [x1b, y1b] = toClip(p1.x + nx, p1.y + ny);
-            const [x2a, y2a] = toClip(p2.x - nx, p2.y - ny);
-            const [x2b, y2b] = toClip(p2.x + nx, p2.y + ny);
+            // Previous normal (for miter)
+            let prevNx = nx,
+                prevNy = ny;
+            if (i > 0) {
+                const p0 = points[i - 1];
+                const dx0 = p1.x - p0.x;
+                const dy0 = p1.y - p0.y;
+                const len0 = Math.sqrt(dx0 * dx0 + dy0 * dy0);
+                if (len0 >= 0.001) {
+                    prevNx = -dy0 / len0;
+                    prevNy = dx0 / len0;
+                }
+            }
+
+            // Miter at P1
+            let m1x = nx + prevNx;
+            let m1y = ny + prevNy;
+            let m1l = Math.sqrt(m1x * m1x + m1y * m1y);
+            if (m1l > 0.001) {
+                m1x /= m1l;
+                m1y /= m1l;
+            }
+
+            // Next normal (for P2 miter)
+            let nextNx = nx,
+                nextNy = ny;
+            if (i < n - 2) {
+                const p3 = points[i + 2];
+                const dx2 = p3.x - p2.x;
+                const dy2 = p3.y - p2.y;
+                const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+                if (len2 >= 0.001) {
+                    nextNx = -dy2 / len2;
+                    nextNy = dx2 / len2;
+                }
+            }
+
+            // Miter at P2
+            let m2x = nx + nextNx;
+            let m2y = ny + nextNy;
+            let m2l = Math.sqrt(m2x * m2x + m2y * m2y);
+            if (m2l > 0.001) {
+                m2x /= m2l;
+                m2y /= m2l;
+            }
+
+            // Generate vertices
+            // P1 Top
+            const x1a = (p1.x - m1x * thickness) * wInv - 1;
+            const y1a = 1 - (p1.y - m1y * thickness) * hInv;
+
+            // P1 Bottom
+            const x1b = (p1.x + m1x * thickness) * wInv - 1;
+            const y1b = 1 - (p1.y + m1y * thickness) * hInv;
+
+            // P2 Top
+            const x2a = (p2.x - m2x * thickness) * wInv - 1;
+            const y2a = 1 - (p2.y - m2y * thickness) * hInv;
+
+            // P2 Bottom
+            const x2b = (p2.x + m2x * thickness) * wInv - 1;
+            const y2b = 1 - (p2.y + m2y * thickness) * hInv;
 
             // Triangle 1
-            vertices.push(x1a, y1a, x1b, y1b, x2a, y2a);
-            // Triangle 2
-            vertices.push(x1b, y1b, x2b, y2b, x2a, y2a);
+            outBuffer[ptr++] = x1a;
+            outBuffer[ptr++] = y1a;
+            outBuffer[ptr++] = -1.0;
+            outBuffer[ptr++] = x1b;
+            outBuffer[ptr++] = y1b;
+            outBuffer[ptr++] = 1.0;
+            outBuffer[ptr++] = x2a;
+            outBuffer[ptr++] = y2a;
+            outBuffer[ptr++] = -1.0;
 
-            // Add round joint at p2 (connection point)
-            addCircle(p2.x, p2.y, thickness);
+            // Triangle 2
+            outBuffer[ptr++] = x1b;
+            outBuffer[ptr++] = y1b;
+            outBuffer[ptr++] = 1.0;
+            outBuffer[ptr++] = x2b;
+            outBuffer[ptr++] = y2b;
+            outBuffer[ptr++] = 1.0;
+            outBuffer[ptr++] = x2a;
+            outBuffer[ptr++] = y2a;
+            outBuffer[ptr++] = -1.0;
         }
 
-        return new Float32Array(vertices);
+        return ptr - offset;
     }
 
     draw(ctx, canvas, analyser, dataArray, params) {
@@ -459,93 +543,79 @@ export class UnknownPleasuresWebGL {
         const { width, height } = canvas;
         const isDark = document.documentElement.getAttribute('data-theme') !== 'white';
 
-        // Set CSS blend mode based on mode and theme
-        // Solid: normal (opaque background)
-        // Blended + Dark: screen (black=transparent, bright=visible)
-        // Blended + Light: normal (semi-transparent background overlay)
-        if (params.mode === 'blended' && isDark) {
-            canvas.style.mixBlendMode = 'screen';
-        } else {
-            canvas.style.mixBlendMode = 'normal';
-        }
+        canvas.style.mixBlendMode = 'normal';
 
-        // Initialize WebGL on first draw
         if (!this.lineProgram) {
             this._initGL(gl, width, height);
-            if (!this.lineProgram) {
-                console.error('WebGL init failed');
-                return;
-            }
         }
 
-        // Reset if needed
         if (this.history.length === 0) {
             this.reset();
         }
 
-        // Update history with propagation speed control
-        // Higher PROPAGATION_SPEED = faster wave propagation
-        this._propagationAccum += UnknownPleasuresWebGL.PROPAGATION_SPEED;
-        const pts = this.dataPoints;
+        if (!params.paused) {
+            this._propagationAccum += UnknownPleasuresWebGL.PROPAGATION_SPEED;
+            const pts = this.dataPoints;
 
-        if (this._propagationAccum >= 1.0) {
-            this._propagationAccum -= 1.0;
+            if (this._propagationAccum >= 1.0) {
+                this._propagationAccum -= 1.0;
 
-            const len = dataArray.length | 0;
-            const line = this.history[this.writeIndex];
-            if (line) {
-                for (let i = 0; i < pts; i++) {
-                    line[i] = (dataArray[(this.xLookup[i] * len) | 0] / 255) * this.pLookup[i];
+                const sampleRate = analyser.context.sampleRate;
+                const nyquist = sampleRate / 2;
+                const targetFreq = 22000;
+                const scale = Math.min(1.0, targetFreq / nyquist);
+                const len = Math.floor(dataArray.length * scale);
+
+                const line = this.history[this.writeIndex];
+                if (line) {
+                    for (let i = 0; i < pts; i++) {
+                        line[i] = (dataArray[(this.xLookup[i] * len) | 0] / 255) * this.pLookup[i];
+                    }
                 }
+                this.writeIndex = (this.writeIndex + 1) % this.historySize;
             }
-            this.writeIndex = (this.writeIndex + 1) % this.historySize;
         }
 
-        // Update palette if color changed
         if (this._paletteColor !== params.primaryColor) {
             this._buildPalette(params.primaryColor);
         }
 
-        // Compute size for rotated bounding box
-        const rotatedW = Math.abs(width * this._cos) + Math.abs(height * this._sin);
-        const rotatedH = Math.abs(width * this._sin) + Math.abs(height * this._cos);
-        const size = Math.max(rotatedW, rotatedH) * 1.15;
-
-        // === PASS 1: Render lines to framebuffer ===
+        // === PASS 1: Scene ===
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.viewport(0, 0, width, height);
-
-        // Clear color based on mode and theme
-        // Solid: dark/light solid background
-        // Blended + Dark (screen): black (black=transparent in screen blend)
-        // Blended + Light: semi-transparent light (album art shows through)
-        if (params.mode !== 'blended') {
-            const bg = isDark ? [0.02, 0.02, 0.02, 1] : [0.9, 0.9, 0.9, 1];
-            gl.clearColor(bg[0], bg[1], bg[2], bg[3]);
-        } else if (isDark) {
-            // Dark: black for screen blend (black=transparent)
-            gl.clearColor(0, 0, 0, 1);
-        } else {
-            // Light: semi-transparent white overlay (frosted glass effect)
-            gl.clearColor(0.92, 0.92, 0.92, 0.85);
-        }
+        gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        // Perspective constants - extended for better corner coverage
-        const horizonY = size * 0.05; // Further back (was 0.1)
-        const frontY = size * 0.9; // Closer to edge (was 0.8)
+        // Constants
+        const size =
+            Math.max(
+                Math.abs(width * this._cos) + Math.abs(height * this._sin),
+                Math.abs(width * this._sin) + Math.abs(height * this._cos)
+            ) * 1.15;
+        const horizonY = size * 0.05;
+        const frontY = size * 0.9;
         const depth = 2.0;
         const totalH = frontY - horizonY;
         const B = totalH / (1 - 1 / (1 + depth));
         const A = frontY - B;
 
-        // Enable blending for anti-aliased edges and proper alpha
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        // --- BATCH GEOMETRY GENERATION ---
+        // Fill the vertex buffer with ALL lines for this frame
+        let bufferOffset = 0;
+        // Store draw commands to execute later: { start, count, colorIndex }
+        const drawCommands = [];
 
-        gl.useProgram(this.lineProgram);
+        // Reuse temporary points array
+        if (!this._tempPoints) this._tempPoints = [];
+        const points = this._tempPoints;
+        const pts = this.dataPoints;
+        const cx = width / 2;
+        const cy = height / 2;
+        const cosR = this._cos;
+        const sinR = this._sin;
+        const offsetX = -size / 2;
+        const offsetY = -size / 2;
 
-        // Draw each line (back to front)
         for (let i = this.historySize - 1; i >= 0; i--) {
             const idx = (this.writeIndex + i) % this.historySize;
             const historyLine = this.history[idx];
@@ -560,60 +630,74 @@ export class UnknownPleasuresWebGL {
             const amp = 200 * scale;
             const lineWidth = Math.max(1, 8 * scale + params.kick * 3);
 
-            // Generate line points (in rotated space, then transform to screen)
-            const points = [];
-            const cx = width / 2;
-            const cy = height / 2;
-            const cosR = this._cos;
-            const sinR = this._sin;
-            const offsetX = -size / 2;
-            const offsetY = -size / 2;
-
+            // Generate points
+            points.length = 0;
             for (let j = 0; j < pts; j++) {
-                // Position in rotated coordinate system
                 const rx = margin + this.xLookup[j] * lw;
                 const ry = y - historyLine[j] * amp;
-
-                // Apply rotation and translate to screen
                 const dx = rx + offsetX;
                 const dy = ry + offsetY;
-                const screenX = dx * cosR - dy * sinR + cx;
-                const screenY = dx * sinR + dy * cosR + cy;
-
-                points.push({ x: screenX, y: screenY });
+                points.push({ x: dx * cosR - dy * sinR + cx, y: dx * sinR + dy * cosR + cy });
             }
 
-            // Generate quad geometry for thick line
-            const vertices = this._generateLineQuads(points, lineWidth / 2, width, height);
-            if (vertices.length === 0) continue;
+            // Write to buffer
+            const vertexCount = this._generateLineQuads(
+                points,
+                lineWidth / 2,
+                width,
+                height,
+                this.vertexBuffer,
+                bufferOffset
+            );
 
-            // Upload vertices
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
-            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-
-            gl.enableVertexAttribArray(this.line_a_position);
-            gl.vertexAttribPointer(this.line_a_position, 2, gl.FLOAT, false, 0, 0);
-
-            // Set color
-            const color = this._paletteRGB[i] || [1, 1, 1];
-            gl.uniform3f(this.line_u_color, color[0], color[1], color[2]);
-
-            // Draw
-            gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 2);
+            if (vertexCount > 0) {
+                drawCommands.push({
+                    start: bufferOffset / 3, // Start vertex index
+                    count: vertexCount / 3, // Number of vertices
+                    colorIndex: i,
+                });
+                bufferOffset += vertexCount; // Advance by number of floats
+            }
         }
 
-        // === PASS 2: Extract bright pixels ===
+        // --- UPLOAD ONCE ---
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuffer);
+        // Upload only the used portion of the pre-allocated buffer
+        gl.bufferData(gl.ARRAY_BUFFER, this.vertexBuffer.subarray(0, bufferOffset), gl.DYNAMIC_DRAW);
+        gl.enableVertexAttribArray(this.line_a_posEdge);
+        gl.vertexAttribPointer(this.line_a_posEdge, 3, gl.FLOAT, false, 0, 0);
+
+        // --- DRAW BATCH ---
+        gl.useProgram(this.lineProgram);
+        gl.enable(gl.BLEND);
+        if (isDark) {
+            gl.blendFunc(gl.ONE, gl.ONE);
+        } else {
+            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        }
+
+        for (const cmd of drawCommands) {
+            const color = this._paletteRGB[cmd.colorIndex] || [1, 1, 1];
+            gl.uniform3f(this.line_u_color, color[0], color[1], color[2]);
+            gl.drawArrays(gl.TRIANGLES, cmd.start, cmd.count);
+        }
+
+        gl.disable(gl.BLEND);
+
+        // === PASS 2: Bloom (Half Res) ===
+        const blurW = Math.max(1, width >> 1);
+        const blurH = Math.max(1, height >> 1);
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurFramebuffer);
-        gl.viewport(0, 0, width, height);
+        gl.viewport(0, 0, blurW, blurH);
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(this.brightnessProgram);
-
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.sceneTexture);
         gl.uniform1i(this.brightness_u_texture, 0);
-        gl.uniform1f(this.brightness_u_threshold, 0.1); // Low threshold for dark mode
+        gl.uniform1f(this.brightness_u_threshold, 0.0);
         gl.uniform1f(this.brightness_u_isDarkTheme, isDark ? 1.0 : 0.0);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
@@ -621,90 +705,60 @@ export class UnknownPleasuresWebGL {
         gl.vertexAttribPointer(this.brightness_a_position, 2, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-        // === PASS 3: Horizontal Gaussian blur ===
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurFinalFramebuffer);
-        gl.viewport(0, 0, width, height);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
+        // === PASS 3: Gaussian Blur (Ping Pong) ===
         gl.useProgram(this.blurProgram);
 
-        // Multiple blur passes with increasing step sizes for smooth wide blur
-        // This prevents banding by using overlapping samples
-        const numPasses = 3;
-        for (let pass = 0; pass < numPasses; pass++) {
-            const stepMultiplier = Math.pow(2, pass); // 1, 2, 4
+        const iterations = 4;
+        let horizontal = true;
 
-            // Horizontal blur
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurFinalFramebuffer);
-            gl.viewport(0, 0, width, height);
-            gl.clearColor(0, 0, 0, 0);
-            gl.clear(gl.COLOR_BUFFER_BIT);
+        for (let i = 0; i < iterations * 2; i++) {
+            const destFBO = horizontal ? this.blurFinalFramebuffer : this.blurFramebuffer;
+            const srcTex = horizontal ? this.blurTexture : this.blurFinalTexture;
+            const spread = 1.0 + i * 0.75;
 
+            gl.bindFramebuffer(gl.FRAMEBUFFER, destFBO);
             gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this.blurTexture);
+            gl.bindTexture(gl.TEXTURE_2D, srcTex);
             gl.uniform1i(this.blur_u_texture, 0);
-            gl.uniform2f(this.blur_u_resolution, width, height);
-            gl.uniform2f(this.blur_u_direction, stepMultiplier, 0.0); // Horizontal with scaled step
-            gl.uniform1f(this.blur_u_radius, 32.0);
-
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
-            gl.enableVertexAttribArray(this.blur_a_position);
-            gl.vertexAttribPointer(this.blur_a_position, 2, gl.FLOAT, false, 0, 0);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-            // Vertical blur
-            gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurFramebuffer);
-            gl.viewport(0, 0, width, height);
-            gl.clearColor(0, 0, 0, 0);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this.blurFinalTexture);
-            gl.uniform1i(this.blur_u_texture, 0);
-            gl.uniform2f(this.blur_u_direction, 0.0, stepMultiplier); // Vertical with scaled step
+            gl.uniform2f(this.blur_u_resolution, blurW, blurH);
+            gl.uniform2f(this.blur_u_direction, horizontal ? 1.0 : 0.0, horizontal ? 0.0 : 1.0);
+            gl.uniform1f(this.blur_u_spread, spread);
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
+            horizontal = !horizontal;
         }
 
-        // === PASS 4: Composite original + blur ===
+        // === PASS 4: Composite ===
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, width, height);
 
-        // Clear color based on mode and theme
-        // Solid: opaque background
-        // Blended + Dark: black (for screen blend)
-        // Blended + Light: transparent (composite has the semi-transparent background in it)
         if (params.mode !== 'blended') {
             const bg = isDark ? [0.02, 0.02, 0.02, 1] : [0.9, 0.9, 0.9, 1];
             gl.clearColor(bg[0], bg[1], bg[2], bg[3]);
         } else if (isDark) {
-            gl.clearColor(0, 0, 0, 1);
+            gl.clearColor(0, 0, 0, 0.4);
         } else {
-            // Light blended: composite will output semi-transparent, clear is transparent
-            gl.clearColor(0, 0, 0, 0);
+            gl.clearColor(0.95, 0.95, 0.95, 0.4);
         }
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        // Blending for final composite
         gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
         gl.useProgram(this.compositeProgram);
-
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.sceneTexture);
         gl.uniform1i(this.composite_u_scene, 0);
 
         gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this.blurTexture); // V-blur result
+        gl.bindTexture(gl.TEXTURE_2D, horizontal ? this.blurTexture : this.blurFinalTexture);
         gl.uniform1i(this.composite_u_blur, 1);
 
-        // Glow strength reacts to kick, scaled by GLOW_INTENSITY
-        const baseGlow = 1.8 + params.kick * 2.5;
-        const glowStrength = baseGlow * UnknownPleasuresWebGL.GLOW_INTENSITY;
-        gl.uniform1f(this.composite_u_glowStrength, glowStrength);
+        const glowBoost = 1.0 + params.kick;
+        gl.uniform1f(this.composite_u_glowStrength, UnknownPleasuresWebGL.GLOW_INTENSITY * glowBoost);
+        gl.uniform1f(this.composite_u_noiseStrength, UnknownPleasuresWebGL.NOISE_STRENGTH);
         gl.uniform1f(this.composite_u_isDarkTheme, isDark ? 1.0 : 0.0);
+        gl.uniform1f(this.composite_u_time, performance.now() / 1000.0);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
         gl.enableVertexAttribArray(this.composite_a_position);

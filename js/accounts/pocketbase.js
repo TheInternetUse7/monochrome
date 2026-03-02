@@ -467,7 +467,7 @@ const syncManager = {
                 user_playlists: this.safeParseInternal(record.user_playlists, 'user_playlists', {}),
                 favorite_albums: this.safeParseInternal(record.favorite_albums, 'favorite_albums', []),
             };
-        } catch (error) {
+        } catch {
             return null;
         }
     },
@@ -493,7 +493,7 @@ const syncManager = {
         try {
             const list = await this.pb.collection('DB_users').getList(1, 1, { filter: `username="${username}"` });
             return list.totalItems > 0;
-        } catch (e) {
+        } catch {
             return false;
         }
     },

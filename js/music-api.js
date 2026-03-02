@@ -76,6 +76,22 @@ export class MusicAPI {
         return api.getArtist(cleanId);
     }
 
+    async getArtistBiography(id, provider = null) {
+        const p = provider || this.getProviderFromId(id) || this.getCurrentProvider();
+        if (p !== 'tidal') return null; // Biography only supported for Tidal
+
+        const api = this.getAPI(p);
+        const cleanId = this.stripProviderPrefix(id);
+        if (typeof api.getArtistBiography === 'function') {
+            return api.getArtistBiography(cleanId);
+        }
+        return null;
+    }
+
+    async getArtistSocials(artistName) {
+        return this.tidalAPI.getArtistSocials(artistName);
+    }
+
     async getPlaylist(id, _provider = null) {
         // Playlists are always Tidal for now
         return this.tidalAPI.getPlaylist(id);
@@ -84,6 +100,16 @@ export class MusicAPI {
     async getMix(id, _provider = null) {
         // Mixes are always Tidal for now
         return this.tidalAPI.getMix(id);
+    }
+
+    async getTrackRecommendations(id) {
+        const p = this.getProviderFromId(id) || this.getCurrentProvider();
+        const api = this.getAPI(p);
+        const cleanId = this.stripProviderPrefix(id);
+        if (typeof api.getTrackRecommendations === 'function') {
+            return api.getTrackRecommendations(cleanId);
+        }
+        return [];
     }
 
     // Stream methods
@@ -96,10 +122,21 @@ export class MusicAPI {
 
     // Cover/artwork methods
     getCoverUrl(id, size = '320') {
+        if (typeof id === 'string' && id.startsWith('blob:')) {
+            return id;
+        }
         if (typeof id === 'string' && id.startsWith('q:')) {
             return this.qobuzAPI.getCoverUrl(id.slice(2), size);
         }
         return this.tidalAPI.getCoverUrl(id, size);
+    }
+
+    getVideoCoverUrl(videoCoverId, fallbackCoverId, size = '1280') {
+        if (videoCoverId) {
+            const videoUrl = this.tidalAPI.getVideoCoverUrl(videoCoverId, size);
+            if (videoUrl) return videoUrl;
+        }
+        return this.getCoverUrl(fallbackCoverId, size);
     }
 
     getArtistPictureUrl(id, size = '320') {

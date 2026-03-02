@@ -24,6 +24,7 @@ import { authManager } from './accounts/auth.js';
 import { registerSW } from 'virtual:pwa-register';
 import './smooth-scrolling.js';
 import { openEditProfile } from './profile.js';
+import { ThemeStore } from './themeStore.js';
 
 import { initTracker } from './tracker.js';
 import {
@@ -48,7 +49,15 @@ import {
     trackOpenLyrics,
     trackCloseLyrics,
 } from './analytics.js';
-import { parseCSV, parseJSPF, parseXSPF, parseXML, parseM3U } from './playlist-importer.js';
+import {
+    parseCSV,
+    parseJSPF,
+    parseXSPF,
+    parseXML,
+    parseM3U,
+    parseDynamicCSV,
+    importToLibrary,
+} from './playlist-importer.js';
 
 // Lazy-loaded modules
 let settingsModule = null;
@@ -296,6 +305,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize analytics
     initAnalytics();
 
+    new ThemeStore();
+
     const api = new MusicAPI(apiSettings);
     const audioPlayer = document.getElementById('audio-player');
 
@@ -455,7 +466,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (player.currentTrack) {
         ui.setCurrentTrack(player.currentTrack);
     }
-    document.querySelector('.now-playing-bar .cover').addEventListener('click', async () => {
+    document.querySelector('.now-playing-bar').addEventListener('click', async (e) => {
+        if (!e.target.closest('.cover')) return;
         if (!player.currentTrack) {
             alert('No track is currently playing');
             return;
@@ -857,7 +869,74 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.target.closest('#shuffle-artist-btn')) {
             const btn = e.target.closest('#shuffle-artist-btn');
             if (btn.disabled) return;
-            document.getElementById('play-artist-radio-btn')?.click();
+            const artistId = window.location.pathname.split('/')[2];
+            if (!artistId) return;
+
+            btn.disabled = true;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML =
+                '<svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle></svg><span>Shuffling...</span>';
+
+            try {
+                const artist = await api.getArtist(artistId);
+                const allReleases = [...(artist.albums || []), ...(artist.eps || [])];
+                const trackSet = new Set();
+                const allTracks = [];
+
+                // Fetch full artist discography tracks (albums + EPs), deduped by track ID.
+                const chunkSize = 8;
+                for (let i = 0; i < allReleases.length; i += chunkSize) {
+                    const chunk = allReleases.slice(i, i + chunkSize);
+                    await Promise.all(
+                        chunk.map(async (album) => {
+                            try {
+                                const { tracks } = await api.getAlbum(album.id);
+                                tracks.forEach((track) => {
+                                    if (!trackSet.has(track.id)) {
+                                        trackSet.add(track.id);
+                                        allTracks.push(track);
+                                    }
+                                });
+                            } catch (err) {
+                                console.warn(`Failed to fetch tracks for album ${album.title}:`, err);
+                            }
+                        })
+                    );
+                }
+
+                // Fallback to artist top tracks if discography fetch yields nothing.
+                if (allTracks.length === 0 && Array.isArray(artist.tracks)) {
+                    artist.tracks.forEach((track) => {
+                        if (!trackSet.has(track.id)) {
+                            trackSet.add(track.id);
+                            allTracks.push(track);
+                        }
+                    });
+                }
+
+                if (allTracks.length === 0) {
+                    throw new Error('No tracks found for this artist');
+                }
+
+                const shuffledTracks = [...allTracks].sort(() => Math.random() - 0.5);
+                player.setQueue(shuffledTracks, 0);
+                const shuffleBtn = document.getElementById('shuffle-btn');
+                if (shuffleBtn) shuffleBtn.classList.remove('active');
+                player.shuffleActive = false;
+                player.playTrackFromQueue();
+
+                const { showNotification } = await loadDownloadsModule();
+                showNotification('Shuffling artist discography');
+            } catch (error) {
+                console.error('Failed to shuffle artist tracks:', error);
+                const { showNotification } = await loadDownloadsModule();
+                showNotification('Failed to shuffle artist tracks');
+            } finally {
+                if (document.body.contains(btn)) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHTML;
+                }
+            }
         }
         if (e.target.closest('#download-mix-btn')) {
             const btn = e.target.closest('#download-mix-btn');
@@ -1074,6 +1153,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const xspfFileInput = document.getElementById('xspf-file-input');
                     const xmlFileInput = document.getElementById('xml-file-input');
                     const m3uFileInput = document.getElementById('m3u-file-input');
+
+                    const importOptions = { strictArtistMatch: true, albumMatch: true };
+
                     let tracks = [];
                     let importSource = 'manual';
                     let cover = document.getElementById('playlist-cover-input').value.trim();
@@ -1147,14 +1229,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const totalTracks = songs.length;
                             progressTotal.textContent = totalTracks.toString();
 
-                            const result = await parseCSV(csvText, api, (progress) => {
-                                const percentage = totalTracks > 0 ? (progress.current / totalTracks) * 100 : 0;
-                                progressFill.style.width = `${Math.min(percentage, 100)}%`;
-                                progressCurrent.textContent = progress.current.toString();
-                                currentTrackElement.textContent = progress.currentTrack;
-                                if (currentArtistElement)
-                                    currentArtistElement.textContent = progress.currentArtist || '';
-                            });
+                            const result = await parseCSV(
+                                csvText,
+                                api,
+                                (progress) => {
+                                    const percentage = totalTracks > 0 ? (progress.current / totalTracks) * 100 : 0;
+                                    progressFill.style.width = `${Math.min(percentage, 100)}%`;
+                                    progressCurrent.textContent = progress.current.toString();
+                                    currentTrackElement.textContent = progress.currentTrack;
+                                    if (currentArtistElement)
+                                        currentArtistElement.textContent = progress.currentArtist || '';
+                                },
+                                importOptions
+                            );
 
                             tracks = result.tracks;
                             const missingTracks = result.missingTracks;
@@ -1269,8 +1356,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             }, 1000);
                         }
                     } else if (csvFileInput.files.length > 0) {
-                        // Import from CSV
-                        importSource = 'csv_import';
                         const file = csvFileInput.files[0];
                         const {
                             progressElement,
@@ -1290,20 +1375,65 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                             const csvText = await file.text();
                             const lines = csvText.trim().split('\n');
-                            const totalTracks = Math.max(0, lines.length - 1);
-                            progressTotal.textContent = totalTracks.toString();
+                            const totalItems = Math.max(0, lines.length - 1);
+                            progressTotal.textContent = totalItems.toString();
 
-                            const result = await parseCSV(csvText, api, (progress) => {
-                                const percentage = totalTracks > 0 ? (progress.current / totalTracks) * 100 : 0;
-                                progressFill.style.width = `${Math.min(percentage, 100)}%`;
-                                progressCurrent.textContent = progress.current.toString();
-                                currentTrackElement.textContent = progress.currentTrack;
-                                if (currentArtistElement)
-                                    currentArtistElement.textContent = progress.currentArtist || '';
-                            });
+                            const result = await parseDynamicCSV(
+                                csvText,
+                                api,
+                                (progress) => {
+                                    const percentage = totalItems > 0 ? (progress.current / totalItems) * 100 : 0;
+                                    progressFill.style.width = `${Math.min(percentage, 100)}%`;
+                                    progressCurrent.textContent = progress.current.toString();
+                                    currentTrackElement.textContent = progress.currentItem;
+                                    if (currentArtistElement) {
+                                        currentArtistElement.textContent = progress.type
+                                            ? `Importing ${progress.type}...`
+                                            : '';
+                                    }
+                                },
+                                importOptions
+                            );
+
+                            const hasMultipleTypes =
+                                result.tracks.length > 0 && (result.albums.length > 0 || result.artists.length > 0);
+
+                            if (hasMultipleTypes) {
+                                currentTrackElement.textContent = 'Adding to library...';
+
+                                const importResults = await importToLibrary(result, db, (progress) => {
+                                    if (progress.action === 'playlist') {
+                                        currentTrackElement.textContent = `Creating playlist: ${progress.item}`;
+                                    } else {
+                                        currentTrackElement.textContent = `Adding ${progress.action}: ${progress.item}`;
+                                    }
+                                });
+
+                                console.log('Import results:', importResults);
+
+                                const summary = [];
+                                if (importResults.tracks.added > 0)
+                                    summary.push(`${importResults.tracks.added} tracks`);
+                                if (importResults.albums.added > 0)
+                                    summary.push(`${importResults.albums.added} albums`);
+                                if (importResults.artists.added > 0)
+                                    summary.push(`${importResults.artists.added} artists`);
+                                if (importResults.playlists.created > 0)
+                                    summary.push(`${importResults.playlists.created} playlists`);
+
+                                alert(
+                                    `Imported to library:\n${summary.join(', ')}\n\n${
+                                        result.missingItems.length > 0
+                                            ? `${result.missingItems.length} items could not be found.`
+                                            : ''
+                                    }`
+                                );
+                                progressElement.style.display = 'none';
+                                return;
+                            }
 
                             tracks = result.tracks;
-                            const missingTracks = result.missingTracks;
+                            const missingTracks = result.missingItems.filter((i) => i.type === 'track');
 
                             if (tracks.length === 0) {
                                 alert('No valid tracks found in the CSV file! Please check the format.');
@@ -2143,6 +2273,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         ui.renderSearchHistory();
     });
 
+    searchInput.addEventListener('click', () => {
+        ui.renderSearchHistory();
+    });
+
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.search-bar')) {
             const historyEl = document.getElementById('search-history');
@@ -2276,6 +2410,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Donate Modal Logic
+    const donateModal = document.getElementById('donate-modal');
+    const closeDonateModalBtn = document.getElementById('close-donate-modal-btn');
+    const sidebarDonateLink = document.getElementById('sidebar-donate-link');
+    const donateBtnAbout = document.getElementById('donate-btn');
+    const donateBtnPage = document.getElementById('donate-btn-page');
+
+    const openDonateModal = (e) => {
+        if (e) e.preventDefault();
+        trackOpenModal('Donate');
+        donateModal.classList.add('active');
+    };
+
+    const closeDonateModal = () => {
+        donateModal.classList.remove('active');
+        trackCloseModal('Donate');
+    };
+
+    if (donateModal) {
+        if (closeDonateModalBtn) closeDonateModalBtn.addEventListener('click', closeDonateModal);
+        donateModal.querySelector('.modal-overlay')?.addEventListener('click', closeDonateModal);
+
+        if (sidebarDonateLink) sidebarDonateLink.addEventListener('click', openDonateModal);
+        if (donateBtnAbout) donateBtnAbout.addEventListener('click', openDonateModal);
+        if (donateBtnPage) donateBtnPage.addEventListener('click', openDonateModal);
+    }
+
     // Listener for Pocketbase Sync updates
     window.addEventListener('library-changed', () => {
         const path = window.location.pathname;
@@ -2307,7 +2468,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (contextMenu.style.display === 'block') {
                         const track = contextMenu._contextTrack;
                         const albumItem = contextMenu.querySelector('[data-action="go-to-album"]');
-                        const artistItem = contextMenu.querySelector('[data-action="go-to-artist"]');
 
                         if (track) {
                             if (albumItem) {
@@ -2321,10 +2481,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                                 albumItem.textContent = `Go to ${label}`;
                                 albumItem.style.display = track.album ? 'block' : 'none';
-                            }
-                            if (artistItem) {
-                                const hasArtist = track.artist || (track.artists && track.artists.length > 0);
-                                artistItem.style.display = hasArtist ? 'block' : 'none';
                             }
                         }
                     }
@@ -2462,6 +2618,7 @@ function escapeHtml(text) {
 function showMissingTracksNotification(missingTracks) {
     const modal = document.getElementById('missing-tracks-modal');
     const listUl = document.getElementById('missing-tracks-list-ul');
+    const copyBtn = document.getElementById('copy-missing-tracks-btn');
 
     listUl.innerHTML = missingTracks
         .map((track) => {
@@ -2470,6 +2627,27 @@ function showMissingTracksNotification(missingTracks) {
             return `<li>${escapeHtml(text)}</li>`;
         })
         .join('');
+
+    if (copyBtn) {
+        const newCopyBtn = copyBtn.cloneNode(true);
+        copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
+
+        newCopyBtn.addEventListener('click', () => {
+            const textToCopy = missingTracks
+                .map((track) => {
+                    return typeof track === 'string'
+                        ? track
+                        : `${track.artist ? track.artist + ' - ' : ''}${track.title}`;
+                })
+                .join('\n');
+
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const originalText = newCopyBtn.textContent;
+                newCopyBtn.textContent = 'Copied!';
+                setTimeout(() => (newCopyBtn.textContent = originalText), 2000);
+            });
+        });
+    }
 
     const closeModal = () => modal.classList.remove('active');
 

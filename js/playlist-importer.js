@@ -1,3 +1,34 @@
+function isFuzzyMatch(str1, str2) {
+    if (!str1 || !str2) return false;
+    const s1 = str1.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    const s2 = str2.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    return s1.includes(s2) || s2.includes(s1);
+}
+
+function findBestMatch(items, targetArtist, targetAlbum, options) {
+    if (!items || items.length === 0) return null;
+    if (!options?.strictArtistMatch && !options?.albumMatch) return items[0];
+
+    return (
+        items.find((item) => {
+            let artistOk = true;
+            let albumOk = true;
+
+            if (options.strictArtistMatch && targetArtist) {
+                const itemArtist = item.artist?.name || item.artists?.[0]?.name;
+                if (!isFuzzyMatch(itemArtist, targetArtist)) artistOk = false;
+            }
+
+            if (options.albumMatch && targetAlbum) {
+                const itemAlbum = item.album?.title;
+                if (itemAlbum && !isFuzzyMatch(itemAlbum, targetAlbum)) albumOk = false;
+            }
+
+            return artistOk && albumOk;
+        }) || null
+    );
+}
+
 /**
  * Helper function to get track artists string
  */
@@ -105,11 +136,86 @@ export function generateXML(playlist, tracks) {
  * @param {Function} onProgress - Progress callback
  * @returns {Promise<{tracks: Array, missingTracks: Array}>}
  */
-export async function parseCSV(csvText, api, onProgress) {
-    const lines = csvText.trim().split('\n');
-    if (lines.length < 2) return { tracks: [], missingTracks: [] };
+const HEADER_MAPPINGS = {
+    track: ['track name', 'title', 'song', 'name', 'track', 'track title'],
+    artist: ['artist name(s)', 'artist name', 'artist', 'artists', 'creator', 'artist names'],
+    album: ['album', 'album name'],
+    type: ['type', 'category', 'kind'],
+    isrc: ['isrc', 'isrc code'],
+    spotifyId: ['spotify - id', 'spotify id', 'spotify_id', 'spotifyid'],
+    playlistName: ['playlist name', 'playlist', 'playlist title'],
+    duration: ['duration', 'length', 'time'],
+};
 
-    // Robust CSV line parser that respects quotes
+function normalizeHeader(header) {
+    return header
+        .toLowerCase()
+        .trim()
+        .replace(/[_\s]+/g, ' ');
+}
+
+function mapHeaders(rawHeaders) {
+    const mapped = {};
+    rawHeaders.forEach((header, index) => {
+        const normalized = normalizeHeader(header);
+        for (const [key, aliases] of Object.entries(HEADER_MAPPINGS)) {
+            if (aliases.includes(normalized)) {
+                mapped[key] = index;
+                break;
+            }
+        }
+    });
+    return mapped;
+}
+
+function detectCSVFormat(mappedHeaders) {
+    const hasType = mappedHeaders.type !== undefined;
+    const hasTrack = mappedHeaders.track !== undefined;
+    const hasArtist = mappedHeaders.artist !== undefined;
+    const hasAlbum = mappedHeaders.album !== undefined;
+
+    if (hasTrack && hasArtist) {
+        return {
+            format: 'library',
+            hasMultipleTypes: hasType,
+            supportsTracks: true,
+            supportsAlbums: hasAlbum,
+            supportsArtists: hasArtist && !hasTrack,
+        };
+    }
+
+    if (hasArtist && !hasTrack) {
+        return {
+            format: 'artists',
+            hasMultipleTypes: false,
+            supportsTracks: false,
+            supportsAlbums: false,
+            supportsArtists: true,
+        };
+    }
+
+    return {
+        format: 'playlist',
+        hasMultipleTypes: false,
+        supportsTracks: true,
+        supportsAlbums: false,
+        supportsArtists: false,
+    };
+}
+
+export async function parseDynamicCSV(csvText, api, onProgress, options = {}) {
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) {
+        return {
+            format: 'unknown',
+            tracks: [],
+            albums: [],
+            artists: [],
+            missingItems: [],
+            playlists: {},
+        };
+    }
+
     const parseLine = (text) => {
         const values = [];
         let current = '';
@@ -129,7 +235,256 @@ export async function parseCSV(csvText, api, onProgress) {
         }
         values.push(current);
 
-        // Clean up quotes: remove surrounding quotes and unescape double quotes if any
+        return values.map((v) => v.trim().replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+    };
+
+    const rawHeaders = parseLine(lines[0]);
+    const mappedHeaders = mapHeaders(rawHeaders);
+    const formatInfo = detectCSVFormat(mappedHeaders);
+    const rows = lines.slice(1);
+
+    const tracks = [];
+    const albums = [];
+    const artists = [];
+    const missingItems = [];
+    const playlists = {};
+    const totalItems = rows.length;
+
+    const getItemType = (values) => {
+        if (mappedHeaders.type !== undefined) {
+            const typeValue = values[mappedHeaders.type]?.toLowerCase().trim();
+            if (typeValue === 'album' || typeValue === 'favorite album') return 'album';
+            if (typeValue === 'artist' || typeValue === 'favorite artist') return 'artist';
+            if (typeValue === 'track' || typeValue === 'favorite' || typeValue === 'favorite track') return 'track';
+        }
+
+        const hasTrackName = mappedHeaders.track !== undefined && values[mappedHeaders.track];
+        const hasArtistName = mappedHeaders.artist !== undefined && values[mappedHeaders.artist];
+        const hasAlbumName = mappedHeaders.album !== undefined && values[mappedHeaders.album];
+
+        if (hasTrackName && hasArtistName) return 'track';
+        if (hasAlbumName && hasArtistName && !hasTrackName) return 'album';
+        if (hasArtistName && !hasTrackName && !hasAlbumName) return 'artist';
+
+        return 'track';
+    };
+
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row.trim()) continue;
+
+        const values = parseLine(row);
+        const itemType = getItemType(values);
+
+        const trackName = mappedHeaders.track !== undefined ? values[mappedHeaders.track] : '';
+        const artistName = mappedHeaders.artist !== undefined ? values[mappedHeaders.artist] : '';
+        const albumName = mappedHeaders.album !== undefined ? values[mappedHeaders.album] : '';
+        const isrc = mappedHeaders.isrc !== undefined ? values[mappedHeaders.isrc] : '';
+        const playlistName = mappedHeaders.playlistName !== undefined ? values[mappedHeaders.playlistName] : '';
+
+        if (onProgress) {
+            onProgress({
+                current: i,
+                total: totalItems,
+                currentItem: trackName || artistName || albumName || 'Unknown item',
+                type: itemType,
+            });
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        try {
+            if (itemType === 'track') {
+                let foundTrack = null;
+
+                if (isrc) {
+                    const searchResult = await api.searchTracks(`isrc:${isrc}`);
+                    if (searchResult.items && searchResult.items.length > 0) {
+                        foundTrack = searchResult.items.find((t) => t.isrc === isrc) || searchResult.items[0];
+                    }
+                }
+
+                if (!foundTrack && trackName && artistName) {
+                    const searchQuery = `"${trackName}" ${artistName}`.trim();
+                    const searchResult = await api.searchTracks(searchQuery);
+                    if (searchResult.items && searchResult.items.length > 0) {
+                        foundTrack = findBestMatch(searchResult.items, artistName, albumName, options);
+                    }
+                }
+
+                if (foundTrack) {
+                    tracks.push(foundTrack);
+                    if (playlistName) {
+                        if (!playlists[playlistName]) {
+                            playlists[playlistName] = [];
+                        }
+                        playlists[playlistName].push(foundTrack);
+                    }
+                } else {
+                    missingItems.push({
+                        type: 'track',
+                        title: trackName,
+                        artist: artistName,
+                        album: albumName,
+                        isrc: isrc,
+                    });
+                }
+            } else if (itemType === 'album') {
+                let foundAlbum = null;
+
+                if (artistName && albumName) {
+                    const searchQuery = `"${albumName}" ${artistName}`.trim();
+                    const searchResult = await api.searchAlbums(searchQuery);
+                    if (searchResult.items && searchResult.items.length > 0) {
+                        foundAlbum = searchResult.items[0];
+                    }
+                }
+
+                if (foundAlbum) {
+                    albums.push(foundAlbum);
+                } else {
+                    missingItems.push({
+                        type: 'album',
+                        title: albumName,
+                        artist: artistName,
+                    });
+                }
+            } else if (itemType === 'artist') {
+                let foundArtist = null;
+
+                if (artistName) {
+                    const searchResult = await api.searchArtists(artistName);
+                    if (searchResult.items && searchResult.items.length > 0) {
+                        foundArtist = searchResult.items[0];
+                    }
+                }
+
+                if (foundArtist) {
+                    artists.push(foundArtist);
+                } else {
+                    missingItems.push({
+                        type: 'artist',
+                        name: artistName,
+                    });
+                }
+            }
+        } catch {
+            missingItems.push({
+                type: itemType,
+                title: trackName || albumName,
+                artist: artistName,
+            });
+        }
+    }
+
+    return {
+        format: formatInfo.format,
+        tracks,
+        albums,
+        artists,
+        missingItems,
+        playlists,
+        stats: {
+            totalItems,
+            tracksFound: tracks.length,
+            albumsFound: albums.length,
+            artistsFound: artists.length,
+            missingCount: missingItems.length,
+            playlistCount: Object.keys(playlists).length,
+        },
+    };
+}
+
+export async function importToLibrary(csvResult, db, onProgress) {
+    const results = {
+        tracks: { added: 0, failed: 0 },
+        albums: { added: 0, failed: 0 },
+        artists: { added: 0, failed: 0 },
+        playlists: { created: 0, tracksAdded: 0 },
+    };
+
+    const addedTrackIds = new Set();
+    const addedAlbumIds = new Set();
+    const addedArtistIds = new Set();
+
+    for (const track of csvResult.tracks) {
+        if (!addedTrackIds.has(track.id)) {
+            try {
+                await db.toggleFavorite('track', track);
+                addedTrackIds.add(track.id);
+                results.tracks.added++;
+            } catch {
+                results.tracks.failed++;
+            }
+        }
+        if (onProgress) onProgress({ action: 'track', item: track.title });
+    }
+
+    for (const album of csvResult.albums) {
+        if (!addedAlbumIds.has(album.id)) {
+            try {
+                await db.toggleFavorite('album', album);
+                addedAlbumIds.add(album.id);
+                results.albums.added++;
+            } catch {
+                results.albums.failed++;
+            }
+        }
+        if (onProgress) onProgress({ action: 'album', item: album.title });
+    }
+
+    for (const artist of csvResult.artists) {
+        if (!addedArtistIds.has(artist.id)) {
+            try {
+                await db.toggleFavorite('artist', artist);
+                addedArtistIds.add(artist.id);
+                results.artists.added++;
+            } catch {
+                results.artists.failed++;
+            }
+        }
+        if (onProgress) onProgress({ action: 'artist', item: artist.name });
+    }
+
+    for (const [playlistName, playlistTracks] of Object.entries(csvResult.playlists)) {
+        if (playlistTracks.length > 0) {
+            try {
+                await db.createPlaylist(playlistName, playlistTracks);
+                results.playlists.created++;
+                results.playlists.tracksAdded += playlistTracks.length;
+            } catch {
+                console.warn(`Failed to create playlist: ${playlistName}`);
+            }
+        }
+        if (onProgress) onProgress({ action: 'playlist', item: playlistName });
+    }
+
+    return results;
+}
+
+export async function parseCSV(csvText, api, onProgress, options = {}) {
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) return { tracks: [], missingTracks: [] };
+
+    const parseLine = (text) => {
+        const values = [];
+        let current = '';
+        let inQuote = false;
+
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+
+            if (char === '"') {
+                inQuote = !inQuote;
+            } else if (char === ',' && !inQuote) {
+                values.push(current);
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        values.push(current);
+
         return values.map((v) => v.trim().replace(/^"|"$/g, '').replace(/""/g, '"').trim());
     };
 
@@ -185,7 +540,6 @@ export async function parseCSV(csvText, api, onProgress) {
                 });
             }
 
-            // Search for the track
             if (trackTitle && artistNames) {
                 await new Promise((resolve) => setTimeout(resolve, 300));
 
@@ -194,11 +548,13 @@ export async function parseCSV(csvText, api, onProgress) {
                     const searchResult = await api.searchTracks(searchQuery);
 
                     if (searchResult.items && searchResult.items.length > 0) {
-                        tracks.push(searchResult.items[0]);
+                        const match = findBestMatch(searchResult.items, artistNames, albumName, options);
+                        if (match) tracks.push(match);
+                        else missingTracks.push({ title: trackTitle, artist: artistNames, album: albumName });
                     } else {
                         missingTracks.push({ title: trackTitle, artist: artistNames, album: albumName });
                     }
-                } catch (e) {
+                } catch {
                     missingTracks.push({ title: trackTitle, artist: artistNames, album: albumName });
                 }
             }
@@ -255,7 +611,7 @@ export async function parseJSPF(jspfText, api, onProgress) {
                     } else {
                         missingTracks.push({ title: trackTitle, artist: trackCreator, album: trackAlbum });
                     }
-                } catch (e) {
+                } catch {
                     missingTracks.push({ title: trackTitle, artist: trackCreator, album: trackAlbum });
                 }
             }
@@ -319,7 +675,7 @@ export async function parseXSPF(xspfText, api, onProgress) {
                 } else {
                     missingTracks.push({ title, artist: creator, album });
                 }
-            } catch (e) {
+            } catch {
                 missingTracks.push({ title, artist: creator, album });
             }
         }
@@ -397,7 +753,7 @@ export async function parseXML(xmlText, api, onProgress) {
                 } else {
                     missingTracks.push({ title, artist, album });
                 }
-            } catch (e) {
+            } catch {
                 missingTracks.push({ title, artist, album });
             }
         }
@@ -472,7 +828,7 @@ export async function parseM3U(m3uText, api, onProgress) {
                 } else {
                     missingTracks.push({ title: info.title, artist: info.artist, album: '' });
                 }
-            } catch (e) {
+            } catch {
                 missingTracks.push({ title: info.title, artist: info.artist, album: '' });
             }
         }
