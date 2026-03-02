@@ -328,32 +328,58 @@ document.addEventListener('DOMContentLoaded', async () => {
     const currentQuality = localStorage.getItem('playback-quality') || 'HI_RES_LOSSLESS';
     const player = new Player(audioPlayer, api, currentQuality);
     window.monochromePlayer = player;
+    const isNeutralino =
+        typeof window !== 'undefined' &&
+        (window.NL_MODE ||
+            window.location.search.includes('mode=neutralino') ||
+            window.location.search.includes('nl_port='));
+
+    if (isNeutralino) {
+        window.NL_MODE = true;
+    }
 
     // Initialize tracker
     initTracker(player);
 
     // Linux Media Keys Fix
-    if (window.NL_MODE) {
+    if (isNeutralino) {
         import('./desktop/neutralino-bridge.js').then(({ events }) => {
             events.on('mediaNext', () => player.playNext());
             events.on('mediaPrevious', () => player.playPrev());
             events.on('mediaPlayPause', () => player.handlePlayPause());
+            events.on('mediaPlay', () => {
+                if (player.audio.paused) {
+                    player.handlePlayPause();
+                }
+            });
+            events.on('mediaPause', () => {
+                if (!player.audio.paused) {
+                    player.handlePlayPause();
+                }
+            });
             events.on('mediaStop', () => {
                 player.audio.pause();
                 player.audio.currentTime = 0;
+            });
+            events.on('mediaSeekBackward', (detail) => {
+                const skipTime = detail?.seekOffset || 10;
+                player.seekBackward(skipTime);
+            });
+            events.on('mediaSeekForward', (detail) => {
+                const skipTime = detail?.seekOffset || 10;
+                player.seekForward(skipTime);
+            });
+            events.on('mediaSeekTo', (detail) => {
+                if (detail?.seekTime === undefined) return;
+                player.audio.currentTime = Math.max(0, detail.seekTime);
+                player.updateMediaSessionPositionState();
             });
             console.log('Media keys initialized via bridge');
         });
     }
 
     // Initialize desktop features if in Neutralino mode
-    if (
-        typeof window !== 'undefined' &&
-        (window.NL_MODE ||
-            window.location.search.includes('mode=neutralino') ||
-            window.location.search.includes('nl_port='))
-    ) {
-        window.NL_MODE = true;
+    if (isNeutralino) {
         try {
             const desktopModule = await import('./desktop/desktop.js');
             await desktopModule.initDesktop(player);
@@ -377,10 +403,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const ua = navigator.userAgent;
         const isChromeOrEdge = (ua.indexOf('Chrome') > -1 || ua.indexOf('Edg') > -1) && !/Mobile|Android/.test(ua);
         const hasFileSystemApi = 'showDirectoryPicker' in window;
-        const isNeutralino =
-            window.NL_MODE ||
-            window.location.search.includes('mode=neutralino') ||
-            window.location.search.includes('nl_port=');
 
         if (!isNeutralino && (!isChromeOrEdge || !hasFileSystemApi)) {
             selectLocalBtn.style.display = 'none';

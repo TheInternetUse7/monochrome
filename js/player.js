@@ -906,12 +906,29 @@ export class Player {
         });
     }
 
+    isNeutralinoBridgeMode() {
+        return (
+            typeof window !== 'undefined' &&
+            window.parent &&
+            window.parent !== window &&
+            (window.NL_MODE ||
+                window.location.search.includes('mode=neutralino') ||
+                window.location.search.includes('nl_port='))
+        );
+    }
+
+    postShellMediaSessionUpdate(data) {
+        if (!this.isNeutralinoBridgeMode()) return;
+        window.parent.postMessage(
+            {
+                type: 'NL_MEDIA_SESSION_UPDATE',
+                data,
+            },
+            '*'
+        );
+    }
+
     updateMediaSession(track) {
-        if (!('mediaSession' in navigator)) return;
-
-        // Force a refresh for picky Bluetooth systems by clearing metadata first
-        navigator.mediaSession.metadata = null;
-
         const artwork = [];
         const sizes = ['320'];
         const coverId = track.album?.cover;
@@ -927,38 +944,55 @@ export class Player {
             });
         }
 
-        navigator.mediaSession.metadata = new MediaMetadata({
+        const metadata = {
             title: trackTitle || 'Unknown Title',
             artist: getTrackArtists(track) || 'Unknown Artist',
             album: track.album?.title || 'Unknown Album',
             artwork: artwork.length > 0 ? artwork : undefined,
-        });
+        };
+
+        if ('mediaSession' in navigator) {
+            // Force a refresh for picky Bluetooth systems by clearing metadata first
+            navigator.mediaSession.metadata = null;
+            navigator.mediaSession.metadata = new MediaMetadata(metadata);
+        }
+
+        this.postShellMediaSessionUpdate({ metadata });
 
         this.updateMediaSessionPlaybackState();
         this.updateMediaSessionPositionState();
     }
 
     updateMediaSessionPlaybackState() {
-        if (!('mediaSession' in navigator)) return;
-        navigator.mediaSession.playbackState = this.audio.paused ? 'paused' : 'playing';
+        const playbackState = this.audio.paused ? 'paused' : 'playing';
+
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = playbackState;
+        }
+
+        this.postShellMediaSessionUpdate({ playbackState });
     }
 
     updateMediaSessionPositionState() {
-        if (!('mediaSession' in navigator)) return;
-        if (!('setPositionState' in navigator.mediaSession)) return;
-
         const duration = this.audio.duration;
 
         if (!duration || isNaN(duration) || !isFinite(duration)) {
             return;
         }
 
+        const positionState = {
+            duration: duration,
+            playbackRate: this.audio.playbackRate || 1,
+            position: Math.min(this.audio.currentTime, duration),
+        };
+
+        this.postShellMediaSessionUpdate({ positionState });
+
+        if (!('mediaSession' in navigator)) return;
+        if (!('setPositionState' in navigator.mediaSession)) return;
+
         try {
-            navigator.mediaSession.setPositionState({
-                duration: duration,
-                playbackRate: this.audio.playbackRate || 1,
-                position: Math.min(this.audio.currentTime, duration),
-            });
+            navigator.mediaSession.setPositionState(positionState);
         } catch (error) {
             console.log('Failed to update Media Session position:', error);
         }
@@ -1054,10 +1088,16 @@ export class Player {
     }
 
     async updateNativeWindow(track) {
-        if (!window.Neutralino) return;
-
         const trackTitle = getTrackTitle(track);
         const artist = getTrackArtists(track);
+
+        if (this.isNeutralinoBridgeMode()) {
+            window.parent.postMessage({ type: 'NL_WINDOW_SET_TITLE', title: `${trackTitle} • ${artist}` }, '*');
+            return;
+        }
+
+        if (!window.Neutralino) return;
+
         try {
             await Neutralino.window.setTitle(`${trackTitle} • ${artist}`);
         } catch (e) {

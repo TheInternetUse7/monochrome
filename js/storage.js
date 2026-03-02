@@ -422,6 +422,8 @@ export const nowPlayingSettings = {
 
 export const lyricsSettings = {
     DOWNLOAD_WITH_TRACKS: 'lyrics-download-with-tracks',
+    ALWAYS_SHOW_TRANSLATION: 'lyrics-auto-show-translation',
+    ALWAYS_SHOW_ROMANIZATION: 'lyrics-auto-show-romanization',
 
     shouldDownloadLyrics() {
         try {
@@ -433,6 +435,30 @@ export const lyricsSettings = {
 
     setDownloadLyrics(enabled) {
         localStorage.setItem(this.DOWNLOAD_WITH_TRACKS, enabled ? 'true' : 'false');
+    },
+
+    shouldAlwaysShowTranslation() {
+        try {
+            return localStorage.getItem(this.ALWAYS_SHOW_TRANSLATION) === 'true';
+        } catch {
+            return false;
+        }
+    },
+
+    setAlwaysShowTranslation(enabled) {
+        localStorage.setItem(this.ALWAYS_SHOW_TRANSLATION, enabled ? 'true' : 'false');
+    },
+
+    shouldAlwaysShowRomanization() {
+        try {
+            return localStorage.getItem(this.ALWAYS_SHOW_ROMANIZATION) === 'true';
+        } catch {
+            return false;
+        }
+    },
+
+    setAlwaysShowRomanization(enabled) {
+        localStorage.setItem(this.ALWAYS_SHOW_ROMANIZATION, enabled ? 'true' : 'false');
     },
 };
 
@@ -2607,6 +2633,8 @@ export const resetAllLocalSettings = () => {
         'monochrome-queue',
         'playback-quality',
         'lyricsRomajiMode',
+        lyricsSettings.ALWAYS_SHOW_TRANSLATION,
+        lyricsSettings.ALWAYS_SHOW_ROMANIZATION,
         'filename-template',
         'zip-folder-template',
         'lastfm-session',

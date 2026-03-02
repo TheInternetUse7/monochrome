@@ -127,6 +127,56 @@
                 }
             };
 
+            const setupShellMediaSessionHandlers = () => {
+                if (!('mediaSession' in navigator)) return;
+
+                const bindHandler = (action, eventName) => {
+                    try {
+                        navigator.mediaSession.setActionHandler(action, (details) => {
+                            forwardEvent(eventName, details);
+                        });
+                    } catch (e) {
+                        // Not all media actions are supported on every platform/browser.
+                    }
+                };
+
+                bindHandler('play', 'mediaPlay');
+                bindHandler('pause', 'mediaPause');
+                bindHandler('previoustrack', 'mediaPrevious');
+                bindHandler('nexttrack', 'mediaNext');
+                bindHandler('seekbackward', 'mediaSeekBackward');
+                bindHandler('seekforward', 'mediaSeekForward');
+                bindHandler('seekto', 'mediaSeekTo');
+                bindHandler('stop', 'mediaStop');
+            };
+
+            const applyShellMediaSessionUpdate = (payload = {}) => {
+                if (!('mediaSession' in navigator)) return;
+
+                if (payload.metadata) {
+                    try {
+                        navigator.mediaSession.metadata = null;
+                        navigator.mediaSession.metadata = new MediaMetadata(payload.metadata);
+                    } catch (e) {
+                        console.warn('[Shell] Failed to set media metadata:', e);
+                    }
+                }
+
+                if (payload.playbackState) {
+                    navigator.mediaSession.playbackState = payload.playbackState;
+                }
+
+                if (payload.positionState && 'setPositionState' in navigator.mediaSession) {
+                    try {
+                        navigator.mediaSession.setPositionState(payload.positionState);
+                    } catch (e) {
+                        // Some OS/browser combinations reject position updates while metadata is settling.
+                    }
+                }
+            };
+
+            setupShellMediaSessionHandlers();
+
             // Listen for specific events to forward
             // Add more here if the app needs them (e.g., tray events)
             Neutralino.events.on('windowClose', async () => {
@@ -206,6 +256,10 @@
                         } catch (e) {
                             console.error('[Shell] Failed to open URL:', e);
                         }
+                        break;
+
+                    case 'NL_MEDIA_SESSION_UPDATE':
+                        applyShellMediaSessionUpdate(data || {});
                         break;
 
                     case 'NL_OS_SHOW_SAVE_DIALOG':

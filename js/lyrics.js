@@ -1,6 +1,7 @@
 //js/lyrics.js
 import { getTrackTitle, getTrackArtists, buildTrackFilename, SVG_CLOSE } from './utils.js';
 import { sidePanelManager } from './side-panel.js';
+import { lyricsSettings } from './storage.js';
 
 const SVG_GENIUS_ACTIVE = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 24c6.627 0 12-5.373 12-12S18.627 0 12 0 0 5.373 0 12s5.373 12 12 12z" fill="#ffff64"/><path d="M6.3 6.3h11.4v11.4H6.3z" fill="#000"/></svg>`;
 
@@ -20,6 +21,32 @@ function trackHasAsianText(track) {
     const title = track.title || '';
     const artist = getTrackArtists(track) || '';
     return containsAsianText(title) || containsAsianText(artist);
+}
+
+function shouldAutoEnableLyricsTranslation() {
+    return lyricsSettings.shouldAlwaysShowTranslation();
+}
+
+function shouldAutoEnableLyricsRomanization() {
+    return lyricsSettings.shouldAlwaysShowRomanization();
+}
+
+function getEffectiveRomajiMode(lyricsManager) {
+    return shouldAutoEnableLyricsRomanization() || lyricsManager.getRomajiMode();
+}
+
+function applyLyricsLanguageDefaults(amLyricsElement) {
+    if (!amLyricsElement) return;
+
+    if (shouldAutoEnableLyricsTranslation()) {
+        amLyricsElement.lyricsTranslation = true;
+        amLyricsElement.setAttribute('lyrics-translation', '');
+    }
+
+    if (shouldAutoEnableLyricsRomanization()) {
+        amLyricsElement.lyricsRomanization = true;
+        amLyricsElement.setAttribute('lyrics-romanization', '');
+    }
 }
 const SVG_GENIUS_INACTIVE = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="opacity: 0.7;"><path d="M12 24c6.627 0 12-5.373 12-12S18.627 0 12 0 0 5.373 0 12s5.373 12 12 12z" /><path d="M6.3 6.3h11.4v11.4H6.3z" fill="var(--card)"/></svg>`;
 
@@ -762,7 +789,8 @@ export function openLyricsPanel(track, audioPlayer, lyricsManager, forceOpen = f
     const manager = lyricsManager || new LyricsManager();
 
     // Load Kuroshiro in background only if track has Asian text and Romaji mode is enabled
-    const isRomajiMode = manager.getRomajiMode();
+    const isRomajiMode = getEffectiveRomajiMode(manager);
+    manager.isRomajiMode = isRomajiMode;
     if (isRomajiMode && trackHasAsianText(track) && !manager.kuroshiroLoaded && !manager.kuroshiroLoading) {
         manager.loadKuroshiro().catch((err) => {
             console.warn('Failed to load Kuroshiro for Romaji conversion:', err);
@@ -773,7 +801,7 @@ export function openLyricsPanel(track, audioPlayer, lyricsManager, forceOpen = f
     manager.timingOffset = manager.getTimingOffset(track.id);
 
     const renderControls = (container) => {
-        const isRomajiMode = manager.getRomajiMode();
+        const isRomajiMode = getEffectiveRomajiMode(manager);
         manager.isRomajiMode = isRomajiMode;
         const isGeniusMode = manager.isGeniusMode;
         const offsetDisplay = manager.getOffsetDisplayString(manager.timingOffset);
@@ -956,7 +984,7 @@ async function renderLyricsComponent(container, track, audioPlayer, lyricsManage
         await lyricsManager.ensureComponentLoaded();
 
         // Set initial Romaji mode
-        lyricsManager.isRomajiMode = lyricsManager.getRomajiMode();
+        lyricsManager.isRomajiMode = getEffectiveRomajiMode(lyricsManager);
         lyricsManager.currentTrackId = track.id;
 
         const title = track.title;
@@ -980,6 +1008,7 @@ async function renderLyricsComponent(container, track, audioPlayer, lyricsManage
         amLyrics.setAttribute('interpolate', '');
         amLyrics.style.height = '100%';
         amLyrics.style.width = '100%';
+        applyLyricsLanguageDefaults(amLyrics);
 
         container.appendChild(amLyrics);
 
@@ -1038,6 +1067,7 @@ async function renderLyricsComponent(container, track, audioPlayer, lyricsManage
         };
 
         await waitForLyrics();
+        applyLyricsLanguageDefaults(amLyrics);
 
         // Convert immediately after lyrics detected
         if (lyricsManager.isRomajiMode) {

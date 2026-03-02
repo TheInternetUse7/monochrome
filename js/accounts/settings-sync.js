@@ -229,6 +229,8 @@ const settingsSyncManager = {
                 bulkForceIndividual: bulkDownloadSettings.shouldForceIndividual(),
                 lyricsDownload: lyricsSettings.shouldDownloadLyrics(),
                 romajiLyrics: localStorage.getItem('lyricsRomajiMode') === 'true',
+                autoLyricsTranslation: lyricsSettings.shouldAlwaysShowTranslation(),
+                autoLyricsRomanization: lyricsSettings.shouldAlwaysShowRomanization(),
                 filenameTemplate: localStorage.getItem('filename-template') || '{trackNumber} - {artist} - {title}',
                 zipFolderTemplate: localStorage.getItem('zip-folder-template') || '{albumTitle} - {albumArtist}',
             },
@@ -436,6 +438,14 @@ const settingsSyncManager = {
 
                 if (dl.romajiLyrics !== undefined) {
                     localStorage.setItem('lyricsRomajiMode', dl.romajiLyrics ? 'true' : 'false');
+                }
+
+                if (dl.autoLyricsTranslation !== undefined) {
+                    lyricsSettings.setAlwaysShowTranslation(dl.autoLyricsTranslation);
+                }
+
+                if (dl.autoLyricsRomanization !== undefined) {
+                    lyricsSettings.setAlwaysShowRomanization(dl.autoLyricsRomanization);
                 }
 
                 if (dl.filenameTemplate) {
@@ -1026,6 +1036,8 @@ const settingsSyncManager = {
                     e.key === analyticsSettings.ENABLED_KEY ||
                     e.key === apiSettings.STORAGE_KEY ||
                     e.key === 'lyricsRomajiMode' ||
+                    e.key === lyricsSettings.ALWAYS_SHOW_TRANSLATION ||
+                    e.key === lyricsSettings.ALWAYS_SHOW_ROMANIZATION ||
                     e.key === 'filename-template' ||
                     e.key === 'zip-folder-template' ||
                     e.key.includes('sidebar'))

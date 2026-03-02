@@ -2024,6 +2024,24 @@ export function initializeSettings(scrobbler, player, api, ui) {
         });
     }
 
+    // Auto-enable Lyrics Translation Toggle
+    const lyricsAutoTranslationToggle = document.getElementById('lyrics-auto-translation-toggle');
+    if (lyricsAutoTranslationToggle) {
+        lyricsAutoTranslationToggle.checked = lyricsSettings.shouldAlwaysShowTranslation();
+        lyricsAutoTranslationToggle.addEventListener('change', (e) => {
+            lyricsSettings.setAlwaysShowTranslation(e.target.checked);
+        });
+    }
+
+    // Auto-enable Lyrics Romanization Toggle
+    const lyricsAutoRomanizationToggle = document.getElementById('lyrics-auto-romanization-toggle');
+    if (lyricsAutoRomanizationToggle) {
+        lyricsAutoRomanizationToggle.checked = lyricsSettings.shouldAlwaysShowRomanization();
+        lyricsAutoRomanizationToggle.addEventListener('change', (e) => {
+            lyricsSettings.setAlwaysShowRomanization(e.target.checked);
+        });
+    }
+
     // Album Background Toggle
     const albumBackgroundToggle = document.getElementById('album-background-toggle');
     if (albumBackgroundToggle) {
@@ -3121,6 +3139,16 @@ function updateInterfaceUI() {
     const romajiLyricsToggle = document.getElementById('romaji-lyrics-toggle');
     if (romajiLyricsToggle) {
         romajiLyricsToggle.checked = localStorage.getItem('lyricsRomajiMode') === 'true';
+    }
+
+    const lyricsAutoTranslationToggle = document.getElementById('lyrics-auto-translation-toggle');
+    if (lyricsAutoTranslationToggle) {
+        lyricsAutoTranslationToggle.checked = lyricsSettings.shouldAlwaysShowTranslation();
+    }
+
+    const lyricsAutoRomanizationToggle = document.getElementById('lyrics-auto-romanization-toggle');
+    if (lyricsAutoRomanizationToggle) {
+        lyricsAutoRomanizationToggle.checked = lyricsSettings.shouldAlwaysShowRomanization();
     }
 
     const albumBackgroundToggle = document.getElementById('album-background-toggle');
