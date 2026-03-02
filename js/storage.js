@@ -1481,8 +1481,6 @@ export const audioEffectsSettings = {
         localStorage.setItem(this.PITCH_KEY, validPitch.toString());
     },
 
-    // Preserve pitch when changing speed (default true)
-    getPreservePitch() {
     isPreservePitchEnabled() {
         try {
             const currentKeyValue = localStorage.getItem(this.PITCH_PRESERVE_KEY);
